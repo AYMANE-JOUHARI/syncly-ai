@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { SynclyLogo } from "@/components/SynclyLogo";
 import { useCourse } from "@/lib/course-context";
-import { generateCourse, fetchCourse, refineCourse, updateSectionTitle } from "@/server/ai";
+import { startCourseGeneration, getJobStatus, fetchCourse, refineCourse, updateSectionTitle } from "@/server/ai";
 import { useServerFn } from "@tanstack/react-start";
 import { extractPdfText } from "@/lib/pdf";
 
@@ -44,7 +44,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function Manager() {
   const navigate = useNavigate();
   const { setCourse } = useCourse();
-  const generateFn = useServerFn(generateCourse);
+  const startGenerationFn = useServerFn(startCourseGeneration);
+  const getStatusFn = useServerFn(getJobStatus);
   const fetchFn = useServerFn(fetchCourse);
   const refineFn = useServerFn(refineCourse);
   const updateTitleFn = useServerFn(updateSectionTitle);
@@ -194,16 +195,27 @@ function Manager() {
       addLog("ok", srcCount > 0
         ? `Parsing ${totalWords.toLocaleString()} words across ${srcCount} source${srcCount !== 1 ? "s" : ""}...`
         : "Preparing role context...");
-      await sleep(600);
-      addLog("ok", "Mapping knowledge to onboarding structure...");
-      setGenProgress(12);
       await sleep(500);
+      addLog("ok", "Mapping knowledge to onboarding structure...");
+      setGenProgress(8);
+      await sleep(400);
 
       const fullRole = company ? `${role} at ${company}` : role;
-      addLog("live", `claude-sonnet-4-6 · writing ${fullRole} curriculum...`);
-      setGenProgress(20);
 
-      // Reveal skeleton sections one by one while Claude works
+      // ── Start async job (returns immediately, no timeout risk) ──
+      const { jobId } = await startGenerationFn({
+        data: {
+          role: fullRole,
+          experienceLevel: level,
+          goal: goals || `Ramp a ${level.toLowerCase()} ${role} to full productivity`,
+          pdfText: allSourceText || undefined,
+        },
+      });
+
+      addLog("live", `claude-sonnet-4-5 · generating ${fullRole} curriculum...`);
+      setGenProgress(15);
+
+      // ── Animate skeleton sections while Claude works in background ──
       const SECTION_LABELS = [
         "Foundations & Context",
         "Core Concepts",
@@ -218,8 +230,7 @@ function Manager() {
         const idx = tick - 1;
         if (idx < SECTION_LABELS.length) {
           setRevealedCount(tick);
-          setGenProgress(20 + tick * 9);
-          addLog("ok", `Building section ${tick} · ${SECTION_LABELS[idx]}...`);
+          addLog("ok", `Structuring section ${tick} · ${SECTION_LABELS[idx]}...`);
         }
         if (tick >= SECTION_LABELS.length) {
           clearInterval(intervalRef.current!);
@@ -227,39 +238,52 @@ function Manager() {
         }
       }, 3200);
 
-      const { courseId: newId } = await generateFn({
-        data: {
-          role: fullRole,
-          experienceLevel: level,
-          goal: goals || `Ramp a ${level.toLowerCase()} ${role} to full productivity`,
-          pdfText: allSourceText || undefined,
-        },
-      });
+      // ── Poll for job completion (every 2.5 s, max 4 min) ──
+      const MAX_MS = 4 * 60 * 1000;
+      const startedAt = Date.now();
+
+      const pollUntilDone = async (): Promise<string> => {
+        if (Date.now() - startedAt > MAX_MS)
+          throw new Error("Generation timed out after 4 minutes. Please try again.");
+
+        await sleep(2500);
+        const { status, courseId: completedId, error: jobError } = await getStatusFn({ data: { jobId } });
+
+        if (status === "complete" && completedId) return completedId;
+        if (status === "error") throw new Error(jobError ?? "Generation failed on the server.");
+
+        // Nudge progress bar forward while waiting
+        const elapsed = Date.now() - startedAt;
+        setGenProgress(Math.min(15 + (elapsed / MAX_MS) * 70, 82));
+
+        return pollUntilDone();
+      };
+
+      const completedCourseId = await pollUntilDone();
 
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
 
-      setGenProgress(85);
-      addLog("ok", "Saving curriculum to database...");
-      await sleep(350);
+      setGenProgress(88);
+      addLog("ok", "Course saved · loading editor...");
+      await sleep(300);
 
-      const generated = await fetchFn({ data: { courseId: newId } });
+      const generated = await fetchFn({ data: { courseId: completedCourseId } });
       setEditorCourse(generated);
-      setCourseId(newId);
+      setCourseId(completedCourseId);
       setCourse(generated);
 
       // Reveal real section titles one by one
       setRevealedCount(generated.sections.length);
       const titles: string[] = [];
       for (let i = 0; i < generated.sections.length; i++) {
-        const s = generated.sections[i];
-        titles.push(s.title);
+        titles.push(generated.sections[i].title);
         setBuiltSections([...titles]);
-        addLog("done", `Section ${i + 1} · ${s.title}`);
-        await sleep(180);
+        addLog("done", `Section ${i + 1} · ${generated.sections[i].title}`);
+        await sleep(150);
       }
 
       setGenProgress(100);
-      await sleep(600);
+      await sleep(500);
       setPhase("editor");
     } catch (e: any) {
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }

@@ -95,6 +95,103 @@ const buildCourseTool: Anthropic.Tool = {
   },
 };
 
+// ── Background generation (runs after HTTP response is sent) ──────────
+type GenInput = { role: string; experienceLevel: string; goal: string; pdfText?: string };
+
+async function runGenerationInBackground(jobId: string, data: GenInput) {
+  const client = getClient();
+  try {
+    await (supabaseAdmin as any).from("course_jobs").update({ status: "running", updated_at: new Date().toISOString() }).eq("id", jobId);
+
+    const userPrompt = `Role: ${data.role}
+Experience level: ${data.experienceLevel}
+Learning goal: ${data.goal}${data.pdfText ? `\n\nSource document excerpt:\n"""\n${data.pdfText.slice(0, 30000)}\n"""` : ""}`;
+
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 16000,
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      tools: [buildCourseTool],
+      tool_choice: { type: "tool", name: "build_course" },
+      messages: [{ role: "user", content: userPrompt }],
+    });
+
+    if (response.stop_reason === "max_tokens") throw new Error("Course generation was cut short. Please try again with a shorter role description or smaller PDF.");
+
+    const toolUse = response.content.find((b) => b.type === "tool_use");
+    if (!toolUse || toolUse.type !== "tool_use") throw new Error("Malformed AI response");
+    const parsed = toolUse.input as CourseShape;
+    if (!Array.isArray(parsed.sections) || parsed.sections.length === 0) throw new Error("AI returned an empty course. Please try again.");
+
+    const { data: course, error: cErr } = await supabaseAdmin.from("courses").insert({
+      role: data.role,
+      experience_level: data.experienceLevel,
+      goal: data.goal,
+      pdf_text: data.pdfText ?? null,
+      course_title: parsed.course_title,
+      learner_goal: parsed.learner_goal,
+    }).select().single();
+    if (cErr || !course) throw new Error(cErr?.message ?? "Failed to save course");
+
+    for (let i = 0; i < parsed.sections.length; i++) {
+      const s = parsed.sections[i];
+      const { data: sec, error: sErr } = await supabaseAdmin.from("sections").insert({
+        course_id: course.id, title: s.title, content: s.content, summary: s.summary, order_index: i,
+      }).select().single();
+      if (sErr || !sec) throw new Error(sErr?.message ?? "Failed to save section");
+
+      const rows = (s.quiz ?? []).map((q, qi) => ({
+        section_id: sec.id, question: q.question,
+        option_a: q.options[0], option_b: q.options[1], option_c: q.options[2], option_d: q.options[3],
+        correct_answer: q.answer, order_index: qi,
+      }));
+      if (rows.length) {
+        const { error: qErr } = await supabaseAdmin.from("quiz_questions").insert(rows);
+        if (qErr) throw new Error(qErr.message);
+      }
+    }
+
+    await (supabaseAdmin as any).from("course_jobs").update({ status: "complete", course_id: course.id, updated_at: new Date().toISOString() }).eq("id", jobId);
+  } catch (e: any) {
+    await (supabaseAdmin as any).from("course_jobs").update({ status: "error", error: e?.message ?? "Unknown error", updated_at: new Date().toISOString() }).eq("id", jobId);
+  }
+}
+
+export const startCourseGeneration = createServerFn({ method: "POST" })
+  .inputValidator((d: GenInput) => {
+    if (!d || typeof d.role !== "string" || typeof d.experienceLevel !== "string" || typeof d.goal !== "string")
+      throw new Error("Invalid input");
+    return {
+      role: clip(d.role, 500),
+      experienceLevel: clip(d.experienceLevel, 100),
+      goal: clip(d.goal, 300),
+      pdfText: typeof d.pdfText === "string" ? d.pdfText.slice(0, 30000) : undefined,
+    };
+  })
+  .handler(async ({ data }) => {
+    const { data: job, error } = await (supabaseAdmin as any).from("course_jobs").insert({ status: "pending" }).select().single();
+    if (error || !job) throw new Error("Failed to create generation job");
+    // Fire-and-forget: runs in background after response is sent
+    setImmediate(() => runGenerationInBackground(job.id, data));
+    return { jobId: job.id as string };
+  });
+
+export const getJobStatus = createServerFn({ method: "GET" })
+  .inputValidator((d: { jobId: string }) => {
+    if (!d || typeof d.jobId !== "string") throw new Error("Invalid input");
+    if (!/^[0-9a-f-]{36}$/i.test(d.jobId)) throw new Error("Invalid jobId");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const { data: job, error } = await (supabaseAdmin as any).from("course_jobs").select("id, status, course_id, error").eq("id", data.jobId).single();
+    if (error || !job) throw new Error("Job not found");
+    return {
+      status: job.status as "pending" | "running" | "complete" | "error",
+      courseId: (job.course_id ?? null) as string | null,
+      error: (job.error ?? null) as string | null,
+    };
+  });
+
 export const generateCourse = createServerFn({ method: "POST" })
   .inputValidator(
     (d: { role: string; experienceLevel: string; goal: string; pdfText?: string }) => {
