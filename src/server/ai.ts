@@ -271,12 +271,24 @@ export const askTutor = createServerFn({ method: "POST" })
   });
 
 export const recordQuizAttempt = createServerFn({ method: "POST" })
-  .inputValidator((d: { sectionId: string; selected: string; correct: boolean }) => d)
+  .inputValidator((d: { questionId: string; selected: string }) => {
+    if (!d || typeof d.questionId !== "string" || typeof d.selected !== "string") throw new Error("Invalid input");
+    if (!/^[0-9a-f-]{36}$/i.test(d.questionId)) throw new Error("Invalid questionId");
+    return { questionId: d.questionId, selected: clip(d.selected, 4) };
+  })
   .handler(async ({ data }) => {
+    // Server-side correctness verification — never trust the client
+    const { data: q } = await supabaseAdmin
+      .from("quiz_questions")
+      .select("section_id, correct_answer")
+      .eq("id", data.questionId)
+      .single();
+    if (!q) throw new Error("Question not found");
+    const isCorrect = data.selected === q.correct_answer;
     await supabaseAdmin.from("quiz_attempts").insert({
-      section_id: data.sectionId,
+      section_id: q.section_id,
       selected_answer: data.selected,
-      is_correct: data.correct,
+      is_correct: isCorrect,
     });
-    return { ok: true };
+    return { ok: true, correct: isCorrect };
   });
