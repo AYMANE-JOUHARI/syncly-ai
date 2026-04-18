@@ -60,21 +60,39 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
     try { sessionStorage.setItem(KEY, JSON.stringify(state)); } catch {}
   }, [state, hydrated]);
 
+  const setCourse = React.useCallback((course: Course | null) => {
+    setState((s) => {
+      // Preserve progress/chat if same course is being re-set
+      if (course && s.course?.id === course.id) return { ...s, course };
+      return { ...s, course, progress: {}, chat: [] };
+    });
+  }, []);
+  const setProgress = React.useCallback((id: string, p: SectionProgress) => {
+    setState((s) => ({ ...s, progress: { ...s.progress, [id]: { ...s.progress[id], ...p } } }));
+  }, []);
+  const addChat = React.useCallback((m: ChatMsg) => {
+    setState((s) => ({ ...s, chat: [...s.chat, m] }));
+  }, []);
+  const updateLastAssistant = React.useCallback((text: string) => {
+    setState((s) => {
+      const chat = [...s.chat];
+      const last = chat[chat.length - 1];
+      if (last?.role === "assistant") chat[chat.length - 1] = { ...last, content: text };
+      else chat.push({ role: "assistant", content: text });
+      return { ...s, chat };
+    });
+  }, []);
+  const resetProgress = React.useCallback(() => {
+    setState((s) => ({ ...s, progress: {}, chat: [] }));
+  }, []);
+
   const value: Ctx = {
     ...state,
-    setCourse: (course) => setState((s) => ({ ...s, course, progress: {}, chat: [] })),
-    setProgress: (id, p) =>
-      setState((s) => ({ ...s, progress: { ...s.progress, [id]: { ...s.progress[id], ...p } } })),
-    addChat: (m) => setState((s) => ({ ...s, chat: [...s.chat, m] })),
-    updateLastAssistant: (text) =>
-      setState((s) => {
-        const chat = [...s.chat];
-        const last = chat[chat.length - 1];
-        if (last?.role === "assistant") chat[chat.length - 1] = { ...last, content: text };
-        else chat.push({ role: "assistant", content: text });
-        return { ...s, chat };
-      }),
-    resetProgress: () => setState((s) => ({ ...s, progress: {}, chat: [] })),
+    setCourse,
+    setProgress,
+    addChat,
+    updateLastAssistant,
+    resetProgress,
   };
   return <CourseContext.Provider value={value}>{children}</CourseContext.Provider>;
 }
