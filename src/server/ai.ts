@@ -210,7 +210,15 @@ export const fetchCourse = createServerFn({ method: "GET" })
   });
 
 export const askTutor = createServerFn({ method: "POST" })
-  .inputValidator((d: { courseId: string; message: string; history: { role: string; content: string }[] }) => d)
+  .inputValidator((d: { courseId: string; message: string; history: { role: string; content: string }[] }) => {
+    if (!d || typeof d.courseId !== "string" || typeof d.message !== "string") throw new Error("Invalid input");
+    if (!/^[0-9a-f-]{36}$/i.test(d.courseId)) throw new Error("Invalid courseId");
+    const history = Array.isArray(d.history) ? d.history.slice(-10).map((m) => ({
+      role: m?.role === "assistant" ? "assistant" : "user",
+      content: clip(String(m?.content ?? ""), 2000),
+    })) : [];
+    return { courseId: d.courseId, message: clip(d.message, 2000), history };
+  })
   .handler(async ({ data }) => {
     // Load course context
     const { data: course } = await supabaseAdmin
