@@ -1,117 +1,138 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { createServerFn } from "@tanstack/react-start";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-const AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const MODEL = "google/gemini-3-flash-preview";
+const MODEL = "claude-sonnet-4-6";
 
-function key() {
-  const k = process.env.LOVABLE_API_KEY;
-  if (!k) throw new Error("LOVABLE_API_KEY not configured");
-  return k;
+function getClient() {
+  const k = process.env.ANTHROPIC_API_KEY;
+  if (!k) throw new Error("ANTHROPIC_API_KEY not configured");
+  return new Anthropic({ apiKey: k });
 }
 
 const clip = (s: string, n: number) => s.replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, n);
 
-export const generateCourse = createServerFn({ method: "POST" })
-  .inputValidator((d: { role: string; experienceLevel: string; goal: string; pdfText?: string }) => {
-    if (!d || typeof d.role !== "string" || typeof d.experienceLevel !== "string" || typeof d.goal !== "string") {
-      throw new Error("Invalid input");
-    }
-    return {
-      role: clip(d.role, 500),
-      experienceLevel: clip(d.experienceLevel, 100),
-      goal: clip(d.goal, 300),
-      pdfText: typeof d.pdfText === "string" ? d.pdfText.slice(0, 30000) : undefined,
-    };
-  })
-  .handler(async ({ data }) => {
-    const systemPrompt = `You are an expert onboarding course designer. Build a focused, practical learning course tailored to the role.
-- Produce 4 to 6 sections in a logical learning order.
-- Each section has rich, paragraph-form content (300-500 words), suitable for prose reading. Use plain text paragraphs separated by blank lines. Do not use markdown headers inside content.
-- Each section has a 1-2 sentence summary and 3-5 multiple choice quiz questions.
-- Each question has exactly four options labeled A, B, C, D and a single correct answer letter.
-- Tailor depth to the experience level and the stated learner goal.
-- If a source document is provided, ground content in it; otherwise rely on best practices.`;
+const SYSTEM_PROMPT = `You are a world-class onboarding course designer used by Fortune 500 companies to onboard new employees quickly and effectively.
 
-    const userPrompt = `Role: ${data.role}
-Experience level: ${data.experienceLevel}
-Learning goal: ${data.goal}
-${data.pdfText ? `\nSource document excerpt:\n"""\n${data.pdfText.slice(0, 30000)}\n"""` : ""}`;
+Rules:
+- Produce exactly 5 or 6 sections in a clear, logical learning progression.
+- Each section must have substantial prose content (400-600 words), written in clear paragraphs separated by blank lines.
+- Content must be practical, actionable, and specific — not generic filler.
+- Use plain text paragraphs separated by blank lines. No markdown headers or bullets inside content fields.
+- Each section has a 1-2 sentence summary and exactly 4 multiple-choice questions.
+- Questions test genuine comprehension and application, not rote recall.
+- Each question has four options labeled A, B, C, D with exactly one correct answer.
+- Tailor depth and vocabulary precisely to the stated experience level.
+- If a source document is provided, ground all content firmly in it.
+- course_title should be specific and professional (e.g. "Charter Broker Fundamentals: Private Aviation Essentials").
+- learner_goal should be a concrete, measurable outcome statement.`;
 
-    const tool = {
-      type: "function",
-      function: {
-        name: "build_course",
-        description: "Return a structured onboarding course",
-        parameters: {
+type CourseShape = {
+  course_title: string;
+  learner_goal: string;
+  sections: Array<{
+    title: string;
+    content: string;
+    summary: string;
+    quiz: Array<{
+      question: string;
+      options: string[];
+      answer: string;
+    }>;
+  }>;
+};
+
+const buildCourseTool: Anthropic.Tool = {
+  name: "build_course",
+  description: "Return a fully structured onboarding course as JSON",
+  input_schema: {
+    type: "object",
+    properties: {
+      course_title: { type: "string", description: "Specific, professional course title" },
+      learner_goal: { type: "string", description: "Concrete, measurable outcome statement" },
+      sections: {
+        type: "array",
+        minItems: 5,
+        maxItems: 6,
+        items: {
           type: "object",
           properties: {
-            course_title: { type: "string" },
-            learner_goal: { type: "string" },
-            sections: {
+            title: { type: "string" },
+            content: {
+              type: "string",
+              description: "400-600 words of clear prose paragraphs separated by blank lines. No markdown.",
+            },
+            summary: { type: "string", description: "1-2 sentence section summary" },
+            quiz: {
               type: "array",
               minItems: 4,
-              maxItems: 6,
+              maxItems: 4,
               items: {
                 type: "object",
                 properties: {
-                  title: { type: "string" },
-                  content: { type: "string" },
-                  summary: { type: "string" },
-                  quiz: {
+                  question: { type: "string" },
+                  options: {
                     type: "array",
-                    minItems: 3,
-                    maxItems: 5,
-                    items: {
-                      type: "object",
-                      properties: {
-                        question: { type: "string" },
-                        options: { type: "array", items: { type: "string" }, minItems: 4, maxItems: 4 },
-                        answer: { type: "string", enum: ["A", "B", "C", "D"] },
-                      },
-                      required: ["question", "options", "answer"],
-                      additionalProperties: false,
-                    },
+                    items: { type: "string" },
+                    minItems: 4,
+                    maxItems: 4,
+                    description: "Four option strings (do not prefix with A/B/C/D)",
                   },
+                  answer: { type: "string", enum: ["A", "B", "C", "D"] },
                 },
-                required: ["title", "content", "summary", "quiz"],
+                required: ["question", "options", "answer"],
                 additionalProperties: false,
               },
             },
           },
-          required: ["course_title", "learner_goal", "sections"],
+          required: ["title", "content", "summary", "quiz"],
           additionalProperties: false,
         },
       },
-    };
+    },
+    required: ["course_title", "learner_goal", "sections"],
+    additionalProperties: false,
+  },
+};
 
-    const resp = await fetch(AI_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        tools: [tool],
-        tool_choice: { type: "function", function: { name: "build_course" } },
-      }),
+export const generateCourse = createServerFn({ method: "POST" })
+  .inputValidator(
+    (d: { role: string; experienceLevel: string; goal: string; pdfText?: string }) => {
+      if (!d || typeof d.role !== "string" || typeof d.experienceLevel !== "string" || typeof d.goal !== "string") {
+        throw new Error("Invalid input");
+      }
+      return {
+        role: clip(d.role, 500),
+        experienceLevel: clip(d.experienceLevel, 100),
+        goal: clip(d.goal, 300),
+        pdfText: typeof d.pdfText === "string" ? d.pdfText.slice(0, 30000) : undefined,
+      };
+    }
+  )
+  .handler(async ({ data }) => {
+    const client = getClient();
+
+    const userPrompt = `Role: ${data.role}
+Experience level: ${data.experienceLevel}
+Learning goal: ${data.goal}${
+      data.pdfText
+        ? `\n\nSource document excerpt:\n"""\n${data.pdfText.slice(0, 30000)}\n"""`
+        : ""
+    }`;
+
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 8192,
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      tools: [buildCourseTool],
+      tool_choice: { type: "tool", name: "build_course" },
+      messages: [{ role: "user", content: userPrompt }],
     });
 
-    if (!resp.ok) {
-      const t = await resp.text();
-      console.error("AI gateway error", resp.status, t);
-      if (resp.status === 429) throw new Error("Rate limited. Please try again in a moment.");
-      if (resp.status === 402) throw new Error("AI credits exhausted. Add credits in Workspace settings.");
-      throw new Error("Failed to generate course");
-    }
-    const json = await resp.json();
-    const args = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    if (!args) throw new Error("Malformed AI response");
-    const parsed = JSON.parse(args);
+    const toolUse = response.content.find((b) => b.type === "tool_use");
+    if (!toolUse || toolUse.type !== "tool_use") throw new Error("Malformed AI response");
+    const parsed = toolUse.input as CourseShape;
 
-    // Persist
     const { data: course, error: cErr } = await supabaseAdmin
       .from("courses")
       .insert({
@@ -140,7 +161,8 @@ ${data.pdfText ? `\nSource document excerpt:\n"""\n${data.pdfText.slice(0, 30000
         .select()
         .single();
       if (sErr || !sec) throw new Error(sErr?.message ?? "Failed to save section");
-      const rows = s.quiz.map((q: any, qi: number) => ({
+
+      const rows = s.quiz.map((q, qi) => ({
         section_id: sec.id,
         question: q.question,
         option_a: q.options[0],
@@ -185,7 +207,6 @@ export const fetchCourse = createServerFn({ method: "GET" })
       id: course.id,
       course_title: course.course_title ?? "Course",
       learner_goal: course.learner_goal ?? course.goal ?? "",
-      // pdf_text intentionally omitted to avoid leaking uploaded document content to clients
       sections: (sections ?? []).map((s) => ({
         id: s.id,
         title: s.title,
@@ -210,17 +231,23 @@ export const fetchCourse = createServerFn({ method: "GET" })
   });
 
 export const askTutor = createServerFn({ method: "POST" })
-  .inputValidator((d: { courseId: string; message: string; history: { role: string; content: string }[] }) => {
-    if (!d || typeof d.courseId !== "string" || typeof d.message !== "string") throw new Error("Invalid input");
-    if (!/^[0-9a-f-]{36}$/i.test(d.courseId)) throw new Error("Invalid courseId");
-    const history = Array.isArray(d.history) ? d.history.slice(-10).map((m) => ({
-      role: m?.role === "assistant" ? "assistant" : "user",
-      content: clip(String(m?.content ?? ""), 2000),
-    })) : [];
-    return { courseId: d.courseId, message: clip(d.message, 2000), history };
-  })
+  .inputValidator(
+    (d: { courseId: string; message: string; history: { role: string; content: string }[] }) => {
+      if (!d || typeof d.courseId !== "string" || typeof d.message !== "string")
+        throw new Error("Invalid input");
+      if (!/^[0-9a-f-]{36}$/i.test(d.courseId)) throw new Error("Invalid courseId");
+      const history = Array.isArray(d.history)
+        ? d.history.slice(-10).map((m) => ({
+            role: m?.role === "assistant" ? "assistant" : "user",
+            content: clip(String(m?.content ?? ""), 2000),
+          }))
+        : [];
+      return { courseId: d.courseId, message: clip(d.message, 2000), history };
+    }
+  )
   .handler(async ({ data }) => {
-    // Load course context
+    const client = getClient();
+
     const { data: course } = await supabaseAdmin
       .from("courses")
       .select("course_title, learner_goal")
@@ -236,32 +263,29 @@ export const askTutor = createServerFn({ method: "POST" })
       .map((s, i) => `${i + 1}. ${s.title} — ${s.summary}`)
       .join("\n")}`;
 
-    const system = `You are Syncly, a friendly onboarding tutor. Answer questions about the course in a clear, concise way. If asked about quiz answers, give a hint but do not reveal the exact answer. Course context:\n${context}`;
+    const systemText = `You are Syncly, a warm and knowledgeable onboarding tutor. Answer questions about the course clearly and concisely (2-4 sentences). If asked about quiz answers, give a helpful hint but never reveal the exact answer. Be encouraging and specific.\n\nCourse context:\n${context}`;
 
-    // Persist user message
     await supabaseAdmin
       .from("chat_messages")
       .insert({ course_id: data.courseId, role: "user", content: data.message });
 
-    const resp = await fetch(AI_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: "system", content: system },
-          ...data.history.slice(-10),
-          { role: "user", content: data.message },
-        ],
-      }),
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      system: [{ type: "text", text: systemText, cache_control: { type: "ephemeral" } }],
+      messages: [
+        ...data.history.slice(-10).map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+        { role: "user", content: data.message },
+      ],
     });
-    if (!resp.ok) {
-      if (resp.status === 429) throw new Error("Rate limited. Please try again shortly.");
-      if (resp.status === 402) throw new Error("AI credits exhausted.");
-      throw new Error("Tutor unavailable");
-    }
-    const json = await resp.json();
-    const text = json.choices?.[0]?.message?.content ?? "Sorry, I had trouble answering that.";
+
+    const text =
+      response.content[0]?.type === "text"
+        ? response.content[0].text
+        : "Sorry, I had trouble answering that.";
 
     await supabaseAdmin
       .from("chat_messages")
@@ -272,7 +296,8 @@ export const askTutor = createServerFn({ method: "POST" })
 
 export const recordQuizAttempt = createServerFn({ method: "POST" })
   .inputValidator((d: { questionId: string; selected: string }) => {
-    if (!d || typeof d.questionId !== "string" || typeof d.selected !== "string") throw new Error("Invalid input");
+    if (!d || typeof d.questionId !== "string" || typeof d.selected !== "string")
+      throw new Error("Invalid input");
     if (!/^[0-9a-f-]{36}$/i.test(d.questionId)) throw new Error("Invalid questionId");
     return { questionId: d.questionId, selected: clip(d.selected, 4) };
   })
@@ -291,4 +316,36 @@ export const recordQuizAttempt = createServerFn({ method: "POST" })
       is_correct: isCorrect,
     });
     return { ok: true, correct: isCorrect };
+  });
+
+export const generateQuizInsight = createServerFn({ method: "POST" })
+  .inputValidator(
+    (d: { sectionTitle: string; score: number; wrongTopics: string[] }) => {
+      if (!d || typeof d.sectionTitle !== "string" || typeof d.score !== "number")
+        throw new Error("Invalid input");
+      return {
+        sectionTitle: clip(d.sectionTitle, 200),
+        score: Math.max(0, Math.min(1, d.score)),
+        wrongTopics: (d.wrongTopics ?? []).slice(0, 4).map((t) => clip(String(t), 120)),
+      };
+    }
+  )
+  .handler(async ({ data }) => {
+    const client = getClient();
+
+    const prompt = `A learner scored ${Math.round(data.score * 100)}% on the quiz for "${data.sectionTitle}". ${
+      data.wrongTopics.length
+        ? `They missed questions about: ${data.wrongTopics.join("; ")}.`
+        : "They got everything right!"
+    } Write exactly 2 sentences of specific, constructive, encouraging feedback. Do not start with "I" or repeat the percentage score.`;
+
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 150,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const insight =
+      response.content[0]?.type === "text" ? response.content[0].text : "";
+    return { insight };
   });

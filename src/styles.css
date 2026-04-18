@@ -77,3 +77,18 @@
   background-size: 200% 200%;
   animation: shimmer 4s ease infinite;
 }
+
+html { scroll-behavior: smooth; }
+
+@media print {
+  .no-print { display: none !important; }
+  .no-print-bg { background: white !important; }
+  .no-print-padding { padding: 0 !important; }
+  body { background: white !important; }
+  header, aside, nav, footer { display: none !important; }
+  .print-certificate {
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+}

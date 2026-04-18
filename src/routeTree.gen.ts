@@ -12,8 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as GeneratingRouteImport } from './routes/generating'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CourseCourseIdRouteImport } from './routes/course.$courseId'
+import { Route as CourseCourseIdIndexRouteImport } from './routes/course.$courseId.index'
 import { Route as CourseCourseIdCompleteRouteImport } from './routes/course.$courseId.complete'
+import { Route as CourseCourseIdCertificateRouteImport } from './routes/course.$courseId.certificate'
 import { Route as CourseCourseIdSectionSectionIdRouteImport } from './routes/course.$courseId.section.$sectionId'
+import { Route as CourseCourseIdSectionSectionIdIndexRouteImport } from './routes/course.$courseId.section.$sectionId.index'
 import { Route as CourseCourseIdSectionSectionIdQuizRouteImport } from './routes/course.$courseId.section.$sectionId.quiz'
 
 const GeneratingRoute = GeneratingRouteImport.update({
@@ -31,16 +34,33 @@ const CourseCourseIdRoute = CourseCourseIdRouteImport.update({
   path: '/course/$courseId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CourseCourseIdIndexRoute = CourseCourseIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CourseCourseIdRoute,
+} as any)
 const CourseCourseIdCompleteRoute = CourseCourseIdCompleteRouteImport.update({
   id: '/complete',
   path: '/complete',
   getParentRoute: () => CourseCourseIdRoute,
 } as any)
+const CourseCourseIdCertificateRoute =
+  CourseCourseIdCertificateRouteImport.update({
+    id: '/certificate',
+    path: '/certificate',
+    getParentRoute: () => CourseCourseIdRoute,
+  } as any)
 const CourseCourseIdSectionSectionIdRoute =
   CourseCourseIdSectionSectionIdRouteImport.update({
     id: '/section/$sectionId',
     path: '/section/$sectionId',
     getParentRoute: () => CourseCourseIdRoute,
+  } as any)
+const CourseCourseIdSectionSectionIdIndexRoute =
+  CourseCourseIdSectionSectionIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CourseCourseIdSectionSectionIdRoute,
   } as any)
 const CourseCourseIdSectionSectionIdQuizRoute =
   CourseCourseIdSectionSectionIdQuizRouteImport.update({
@@ -53,26 +73,33 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/generating': typeof GeneratingRoute
   '/course/$courseId': typeof CourseCourseIdRouteWithChildren
+  '/course/$courseId/certificate': typeof CourseCourseIdCertificateRoute
   '/course/$courseId/complete': typeof CourseCourseIdCompleteRoute
+  '/course/$courseId/': typeof CourseCourseIdIndexRoute
   '/course/$courseId/section/$sectionId': typeof CourseCourseIdSectionSectionIdRouteWithChildren
   '/course/$courseId/section/$sectionId/quiz': typeof CourseCourseIdSectionSectionIdQuizRoute
+  '/course/$courseId/section/$sectionId/': typeof CourseCourseIdSectionSectionIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/generating': typeof GeneratingRoute
-  '/course/$courseId': typeof CourseCourseIdRouteWithChildren
+  '/course/$courseId/certificate': typeof CourseCourseIdCertificateRoute
   '/course/$courseId/complete': typeof CourseCourseIdCompleteRoute
-  '/course/$courseId/section/$sectionId': typeof CourseCourseIdSectionSectionIdRouteWithChildren
+  '/course/$courseId': typeof CourseCourseIdIndexRoute
   '/course/$courseId/section/$sectionId/quiz': typeof CourseCourseIdSectionSectionIdQuizRoute
+  '/course/$courseId/section/$sectionId': typeof CourseCourseIdSectionSectionIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/generating': typeof GeneratingRoute
   '/course/$courseId': typeof CourseCourseIdRouteWithChildren
+  '/course/$courseId/certificate': typeof CourseCourseIdCertificateRoute
   '/course/$courseId/complete': typeof CourseCourseIdCompleteRoute
+  '/course/$courseId/': typeof CourseCourseIdIndexRoute
   '/course/$courseId/section/$sectionId': typeof CourseCourseIdSectionSectionIdRouteWithChildren
   '/course/$courseId/section/$sectionId/quiz': typeof CourseCourseIdSectionSectionIdQuizRoute
+  '/course/$courseId/section/$sectionId/': typeof CourseCourseIdSectionSectionIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -80,25 +107,32 @@ export interface FileRouteTypes {
     | '/'
     | '/generating'
     | '/course/$courseId'
+    | '/course/$courseId/certificate'
     | '/course/$courseId/complete'
+    | '/course/$courseId/'
     | '/course/$courseId/section/$sectionId'
     | '/course/$courseId/section/$sectionId/quiz'
+    | '/course/$courseId/section/$sectionId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/generating'
-    | '/course/$courseId'
+    | '/course/$courseId/certificate'
     | '/course/$courseId/complete'
-    | '/course/$courseId/section/$sectionId'
+    | '/course/$courseId'
     | '/course/$courseId/section/$sectionId/quiz'
+    | '/course/$courseId/section/$sectionId'
   id:
     | '__root__'
     | '/'
     | '/generating'
     | '/course/$courseId'
+    | '/course/$courseId/certificate'
     | '/course/$courseId/complete'
+    | '/course/$courseId/'
     | '/course/$courseId/section/$sectionId'
     | '/course/$courseId/section/$sectionId/quiz'
+    | '/course/$courseId/section/$sectionId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -130,11 +164,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CourseCourseIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/course/$courseId/': {
+      id: '/course/$courseId/'
+      path: '/'
+      fullPath: '/course/$courseId/'
+      preLoaderRoute: typeof CourseCourseIdIndexRouteImport
+      parentRoute: typeof CourseCourseIdRoute
+    }
     '/course/$courseId/complete': {
       id: '/course/$courseId/complete'
       path: '/complete'
       fullPath: '/course/$courseId/complete'
       preLoaderRoute: typeof CourseCourseIdCompleteRouteImport
+      parentRoute: typeof CourseCourseIdRoute
+    }
+    '/course/$courseId/certificate': {
+      id: '/course/$courseId/certificate'
+      path: '/certificate'
+      fullPath: '/course/$courseId/certificate'
+      preLoaderRoute: typeof CourseCourseIdCertificateRouteImport
       parentRoute: typeof CourseCourseIdRoute
     }
     '/course/$courseId/section/$sectionId': {
@@ -143,6 +191,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/course/$courseId/section/$sectionId'
       preLoaderRoute: typeof CourseCourseIdSectionSectionIdRouteImport
       parentRoute: typeof CourseCourseIdRoute
+    }
+    '/course/$courseId/section/$sectionId/': {
+      id: '/course/$courseId/section/$sectionId/'
+      path: '/'
+      fullPath: '/course/$courseId/section/$sectionId/'
+      preLoaderRoute: typeof CourseCourseIdSectionSectionIdIndexRouteImport
+      parentRoute: typeof CourseCourseIdSectionSectionIdRoute
     }
     '/course/$courseId/section/$sectionId/quiz': {
       id: '/course/$courseId/section/$sectionId/quiz'
@@ -156,12 +211,15 @@ declare module '@tanstack/react-router' {
 
 interface CourseCourseIdSectionSectionIdRouteChildren {
   CourseCourseIdSectionSectionIdQuizRoute: typeof CourseCourseIdSectionSectionIdQuizRoute
+  CourseCourseIdSectionSectionIdIndexRoute: typeof CourseCourseIdSectionSectionIdIndexRoute
 }
 
 const CourseCourseIdSectionSectionIdRouteChildren: CourseCourseIdSectionSectionIdRouteChildren =
   {
     CourseCourseIdSectionSectionIdQuizRoute:
       CourseCourseIdSectionSectionIdQuizRoute,
+    CourseCourseIdSectionSectionIdIndexRoute:
+      CourseCourseIdSectionSectionIdIndexRoute,
   }
 
 const CourseCourseIdSectionSectionIdRouteWithChildren =
@@ -170,12 +228,16 @@ const CourseCourseIdSectionSectionIdRouteWithChildren =
   )
 
 interface CourseCourseIdRouteChildren {
+  CourseCourseIdCertificateRoute: typeof CourseCourseIdCertificateRoute
   CourseCourseIdCompleteRoute: typeof CourseCourseIdCompleteRoute
+  CourseCourseIdIndexRoute: typeof CourseCourseIdIndexRoute
   CourseCourseIdSectionSectionIdRoute: typeof CourseCourseIdSectionSectionIdRouteWithChildren
 }
 
 const CourseCourseIdRouteChildren: CourseCourseIdRouteChildren = {
+  CourseCourseIdCertificateRoute: CourseCourseIdCertificateRoute,
   CourseCourseIdCompleteRoute: CourseCourseIdCompleteRoute,
+  CourseCourseIdIndexRoute: CourseCourseIdIndexRoute,
   CourseCourseIdSectionSectionIdRoute:
     CourseCourseIdSectionSectionIdRouteWithChildren,
 }
@@ -192,3 +254,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
