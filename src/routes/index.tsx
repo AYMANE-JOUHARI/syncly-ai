@@ -1,19 +1,13 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
-import { Upload, FileText, Sparkles, X, BookOpen, Target, MessageCircle, ArrowRight, CheckCircle, Zap } from "lucide-react";
+import {
+  BookOpen, Target, MessageCircle, ArrowRight,
+  CheckCircle, Zap, FileText, GraduationCap, Sparkles,
+} from "lucide-react";
 import { SynclyLogo } from "@/components/SynclyLogo";
-import { extractPdfText } from "@/lib/pdf";
 import { useLastCourseId } from "@/lib/course-context";
 
-export const Route = createFileRoute("/")({
-  component: Intake,
-});
-
-const LEVELS = [
-  { value: "new_to_industry", label: "New to industry" },
-  { value: "switching_roles", label: "Switching roles" },
-  { value: "experienced_company_context", label: "Experienced but needs company context" },
-];
+export const Route = createFileRoute("/")({ component: Home });
 
 const FEATURES = [
   {
@@ -37,65 +31,48 @@ const FEATURES = [
 ];
 
 const SOCIAL_PROOF = [
-  "Charter Aviation",
-  "SaaS Sales",
-  "Financial Services",
-  "Healthcare Ops",
-  "Logistics & Freight",
-  "Customer Success",
+  "Charter Aviation", "SaaS Sales", "Financial Services",
+  "Healthcare Ops", "Logistics & Freight", "Customer Success",
 ];
 
-function Intake() {
-  const navigate = useNavigate();
+/* ── Hero rings (large decorative mark) ── */
+function HeroMark() {
+  const r = 36;
+  const sw = 2.5;
+  const gap = Math.round(r * 1.35);
+  const cx1 = r + sw;
+  const cx2 = cx1 + gap;
+  const cy  = r + sw;
+  const w   = cx2 + r + sw;
+  const h   = cy + r + sw;
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} fill="none" className="mx-auto mb-6 opacity-90">
+      <circle cx={cx1} cy={cy} r={r} stroke="white" strokeWidth={sw} />
+      <circle cx={cx2} cy={cy} r={r} stroke="#818cf8" strokeWidth={sw} />
+    </svg>
+  );
+}
+
+function Home() {
   const lastCourseId = useLastCourseId();
-  const [role, setRole] = React.useState("");
-  const [level, setLevel] = React.useState(LEVELS[0].value);
-  const [goal, setGoal] = React.useState("");
-  const [file, setFile] = React.useState<File | null>(null);
-  const [parsing, setParsing] = React.useState(false);
-  const [drag, setDrag] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const handleFile = async (f: File | null) => {
-    setError(null);
-    if (!f) { setFile(null); return; }
-    if (f.type !== "application/pdf") { setError("Please upload a PDF file."); return; }
-    setFile(f);
-  };
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (!role.trim()) { setError("Please describe the role."); return; }
-    setParsing(true);
-    let pdfText = "";
-    if (file) {
-      try { pdfText = await extractPdfText(file); }
-      catch (err) { console.error("PDF extract failed:", err); pdfText = ""; }
-    }
-    sessionStorage.setItem(
-      "syncly:intake",
-      JSON.stringify({ role, experienceLevel: level, goal, pdfText }),
-    );
-    navigate({ to: "/generating" });
-  };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen" style={{ background: "var(--bg)" }}>
+
       {/* ── HERO ── */}
-      <section className="relative overflow-hidden bg-slate-950 pb-24 pt-8">
-        {/* Subtle radial gradient background */}
+      <section className="relative overflow-hidden bg-slate-950 pb-28 pt-0">
+        {/* Radial glow */}
         <div
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99,102,241,0.25) 0%, transparent 70%)",
+              "radial-gradient(ellipse 80% 55% at 50% -10%, rgba(99,102,241,0.28) 0%, transparent 70%)",
           }}
         />
 
         {/* Header */}
-        <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-2 sm:px-10">
-          <SynclyLogo size="md" />
+        <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-5 sm:px-10">
+          <SynclyLogo size="md" dark />
           <nav className="flex items-center gap-4">
             {lastCourseId && (
               <Link
@@ -106,51 +83,85 @@ function Intake() {
                 Resume last course <ArrowRight className="h-3 w-3" />
               </Link>
             )}
-            <a
-              href="#get-started"
-              className="rounded-xl px-4 py-2 text-sm font-semibold text-white"
+            <Link
+              to="/manager"
+              className="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
               style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)" }}
             >
               Get started free
-            </a>
+            </Link>
           </nav>
         </header>
 
-        {/* Hero content */}
-        <div className="relative z-10 mx-auto max-w-3xl px-6 pt-16 text-center sm:px-10">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-indigo-300 ring-1 ring-white/10">
-            <Sparkles className="h-3.5 w-3.5" />
-            Powered by Claude AI — builds your course in under 60 seconds
+        {/* Hero body */}
+        <div className="relative z-10 mx-auto max-w-3xl px-6 pt-14 text-center sm:px-10">
+          {/* Decorative two-circle mark */}
+          <HeroMark />
+
+          {/* Eyebrow */}
+          <div
+            className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/8 px-4 py-1.5 text-xs text-indigo-300 ring-1 ring-white/10"
+            style={{ fontFamily: "var(--font-mono-syncly)" }}
+          >
+            <Sparkles className="h-3 w-3" />
+            AI ONBOARDING PLATFORM
           </div>
 
-          <h1 className="text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
-            Build any onboarding course
-            <br />
-            <span
-              className="bg-clip-text text-transparent"
-              style={{ backgroundImage: "linear-gradient(135deg, #818cf8, #c084fc)" }}
-            >
-              in 60 seconds
-            </span>
+          {/* Wordmark */}
+          <h1
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 400,
+              fontSize: "clamp(56px, 10vw, 120px)",
+              lineHeight: 0.95,
+              letterSpacing: "-0.03em",
+              color: "white",
+              margin: "0 0 20px",
+            }}
+          >
+            Syncly
           </h1>
 
-          <p className="mx-auto mt-5 max-w-xl text-base text-slate-400 sm:text-lg">
-            Describe the role, drop in an internal PDF, and get a structured learning path with quizzes and an AI tutor — ready before your new hire's first day.
+          {/* Italic tagline */}
+          <p
+            style={{
+              fontFamily: "var(--font-display)",
+              fontStyle: "italic",
+              fontWeight: 400,
+              fontSize: "clamp(20px, 3.5vw, 32px)",
+              lineHeight: 1.3,
+              letterSpacing: "-0.01em",
+              color: "rgba(255,255,255,0.85)",
+              margin: "0 0 16px",
+            }}
+          >
+            Onboarding,{" "}
+            <span
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: "linear-gradient(135deg, #a5b4fc, #c084fc)" }}
+            >
+              in sync
+            </span>{" "}
+            with your company.
           </p>
 
-          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <a
-              href="#get-started"
-              className="inline-flex items-center gap-2 rounded-2xl px-6 py-3.5 text-base font-semibold text-white shadow-lg transition hover:shadow-indigo-500/25 hover:scale-[1.02]"
+          <p className="mx-auto mb-10 max-w-lg text-base leading-relaxed sm:text-lg" style={{ color: "rgba(148,163,184,0.9)" }}>
+            Turn what your team already knows into a guided curriculum new hires actually finish — grounded in your docs, with practice and answers when they need them.
+          </p>
+
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <Link
+              to="/manager"
+              className="inline-flex items-center gap-2 rounded-2xl px-7 py-4 text-base font-semibold text-white shadow-lg transition hover:scale-[1.02] hover:shadow-indigo-500/30"
               style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)" }}
             >
               Build a course free <ArrowRight className="h-4 w-4" />
-            </a>
+            </Link>
             {lastCourseId && (
               <Link
                 to="/course/$courseId"
                 params={{ courseId: lastCourseId }}
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-6 py-3.5 text-base font-medium text-white transition hover:bg-white/10"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-7 py-4 text-base font-medium text-white transition hover:bg-white/10"
               >
                 Resume my last course
               </Link>
@@ -159,12 +170,12 @@ function Intake() {
 
           {/* Social proof chips */}
           <div className="mt-10 flex flex-wrap justify-center gap-2">
-            {SOCIAL_PROOF.map((role) => (
+            {SOCIAL_PROOF.map((item) => (
               <span
-                key={role}
+                key={item}
                 className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-400 ring-1 ring-white/10"
               >
-                {role}
+                {item}
               </span>
             ))}
           </div>
@@ -172,22 +183,33 @@ function Intake() {
       </section>
 
       {/* ── FEATURES ── */}
-      <section className="bg-slate-50 py-20">
+      <section className="py-20" style={{ background: "var(--bg)" }}>
         <div className="mx-auto max-w-6xl px-6 sm:px-10">
           <div className="mb-12 text-center">
-            <h2 className="text-2xl font-bold text-slate-900 sm:text-3xl">
-              Everything a new hire needs, generated instantly
+            <h2
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 400,
+                fontSize: "clamp(24px, 4vw, 40px)",
+                letterSpacing: "-0.02em",
+                color: "var(--ink)",
+                margin: 0,
+              }}
+            >
+              Everything a new hire needs,{" "}
+              <em>generated instantly</em>
             </h2>
-            <p className="mt-3 text-slate-500">
-              No course authoring. No manual quiz creation. Just upload what your team knows and let AI do the rest.
+            <p className="mt-3 text-base" style={{ color: "var(--ink-3)" }}>
+              No course authoring. No manual quiz creation. Just upload what your team knows.
             </p>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-3">
             {FEATURES.map((f) => (
               <div
                 key={f.title}
-                className="group rounded-2xl bg-white p-7 shadow-sm ring-1 ring-slate-100 transition hover:-translate-y-0.5 hover:shadow-md"
+                className="group rounded-2xl bg-white p-7 transition hover:-translate-y-0.5 hover:shadow-md"
+                style={{ border: "1px solid var(--line)" }}
               >
                 <div
                   className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl"
@@ -195,22 +217,24 @@ function Intake() {
                 >
                   <f.icon className="h-5 w-5 text-white" />
                 </div>
-                <h3 className="mb-2 text-base font-semibold text-slate-900">{f.title}</h3>
-                <p className="text-sm leading-relaxed text-slate-500">{f.description}</p>
+                <h3 className="mb-2 text-base font-semibold" style={{ color: "var(--ink)" }}>
+                  {f.title}
+                </h3>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--ink-3)" }}>
+                  {f.description}
+                </p>
               </div>
             ))}
           </div>
 
-          {/* How it works strip */}
-          <div className="mt-12 rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-100">
-            <h3 className="mb-6 text-center text-sm font-semibold uppercase tracking-wider text-slate-400">
-              How it works
-            </h3>
-            <div className="grid gap-4 sm:grid-cols-3">
+          {/* How it works */}
+          <div className="mt-10 rounded-2xl bg-white p-8" style={{ border: "1px solid var(--line)" }}>
+            <h3 className="eyebrow-mono mb-6 text-center">How it works</h3>
+            <div className="grid gap-6 sm:grid-cols-3">
               {[
-                { icon: FileText, step: "1", label: "Describe the role", desc: "Tell Claude what this person will do day-to-day and their starting experience level." },
-                { icon: Zap, step: "2", label: "AI builds the course", desc: "Claude structures a 5-6 section learning path, writes content, and generates 4 quiz questions per section." },
-                { icon: CheckCircle, step: "3", label: "New hire learns & gets certified", desc: "They read, take quizzes, ask the AI tutor anything, and earn a completion certificate." },
+                { icon: FileText,     step: "1", label: "Describe the role",             desc: "Tell Claude what this person will do day-to-day and their starting experience level." },
+                { icon: Zap,          step: "2", label: "AI builds the course",           desc: "Claude structures a 5-6 section learning path, writes content, and generates 4 quiz questions per section." },
+                { icon: CheckCircle,  step: "3", label: "New hire learns & gets certified", desc: "They read, take quizzes, ask the AI tutor anything, and earn a completion certificate." },
               ].map((item) => (
                 <div key={item.step} className="flex gap-4">
                   <div
@@ -220,8 +244,8 @@ function Intake() {
                     {item.step}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-slate-800">{item.label}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{item.desc}</p>
+                    <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{item.label}</p>
+                    <p className="mt-0.5 text-xs leading-relaxed" style={{ color: "var(--ink-3)" }}>{item.desc}</p>
                   </div>
                 </div>
               ))}
@@ -230,142 +254,100 @@ function Intake() {
         </div>
       </section>
 
-      {/* ── INTAKE FORM ── */}
-      <section id="get-started" className="bg-slate-50 py-16">
-        <div className="mx-auto max-w-2xl px-5">
-          <div className="mb-8 text-center">
-            <h2 className="text-2xl font-bold text-slate-900 sm:text-3xl">
-              Build your first course — free
+      {/* ── PERSONA PICKER ── */}
+      <section className="py-16" style={{ background: "var(--bg)", borderTop: "1px solid var(--line)" }}>
+        <div className="mx-auto max-w-3xl px-6 sm:px-10">
+          <div className="mb-10 text-center">
+            <h2
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 400,
+                fontStyle: "italic",
+                fontSize: "clamp(22px, 4vw, 36px)",
+                letterSpacing: "-0.015em",
+                color: "var(--ink)",
+                margin: 0,
+              }}
+            >
+              Who are you?
             </h2>
-            <p className="mt-2 text-slate-500">
-              Describe the role and optional context document. Claude handles the rest.
+            <p className="mt-2 text-sm" style={{ color: "var(--ink-3)" }}>
+              Syncly serves both sides of onboarding.
             </p>
           </div>
 
-          {/* Resume banner */}
-          {lastCourseId && (
-            <div className="mb-6 flex items-center justify-between rounded-2xl bg-indigo-50 px-5 py-4 ring-1 ring-indigo-100">
+          <div className="grid gap-5 sm:grid-cols-2">
+            {/* Manager card */}
+            <Link
+              to="/manager"
+              className="group flex flex-col justify-between rounded-2xl bg-white p-7 transition hover:-translate-y-0.5 hover:shadow-md"
+              style={{ border: "1px solid var(--line)", textDecoration: "none" }}
+            >
               <div>
-                <p className="text-sm font-semibold text-indigo-900">Resume where you left off</p>
-                <p className="text-xs text-indigo-600 mt-0.5">Your previous course is still saved</p>
+                <div className="mb-5 flex items-center justify-between">
+                  <div
+                    className="flex h-11 w-11 items-center justify-center rounded-xl"
+                    style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)" }}
+                  >
+                    <BookOpen className="h-5 w-5 text-white" />
+                  </div>
+                  <span className="eyebrow-mono">01</span>
+                </div>
+                <h3
+                  className="mb-2"
+                  style={{ fontFamily: "var(--font-display)", fontWeight: 400, fontSize: 22, letterSpacing: "-0.01em", color: "var(--ink)" }}
+                >
+                  I'm a Manager
+                </h3>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--ink-3)" }}>
+                  Upload your docs. Syncly builds a five-day onboarding curriculum grounded in exactly what your team actually knows.
+                </p>
               </div>
+              <div
+                className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium transition-all group-hover:gap-3"
+                style={{ color: "#4f46e5" }}
+              >
+                Build a curriculum <ArrowRight className="h-4 w-4" />
+              </div>
+            </Link>
+
+            {/* New Hire card */}
+            {lastCourseId ? (
               <Link
                 to="/course/$courseId"
                 params={{ courseId: lastCourseId }}
-                className="flex-shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-white"
-                style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)" }}
+                className="group flex flex-col justify-between rounded-2xl bg-white p-7 transition hover:-translate-y-0.5 hover:shadow-md"
+                style={{ border: "1px solid var(--line)", textDecoration: "none" }}
               >
-                Resume →
+                <NewHireContent />
+                <div
+                  className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium transition-all group-hover:gap-3"
+                  style={{ color: "#4f46e5" }}
+                >
+                  Resume my course <ArrowRight className="h-4 w-4" />
+                </div>
               </Link>
-            </div>
-          )}
-
-          <form
-            onSubmit={submit}
-            className="space-y-5 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100 sm:p-8"
-          >
-            <Field label="Describe the role" required>
-              <textarea
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                rows={4}
-                placeholder="e.g. Charter Broker responsible for quoting private jet charters, client communication, and FAA compliance"
-                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-              />
-            </Field>
-
-            <Field label="Experience Level">
-              <select
-                value={level}
-                onChange={(e) => setLevel(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            ) : (
+              <div
+                className="flex flex-col justify-between rounded-2xl bg-white p-7"
+                style={{ border: "1px solid var(--line)" }}
               >
-                {LEVELS.map((l) => (
-                  <option key={l.value} value={l.value}>{l.label}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Learning Goal">
-              <input
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
-                placeholder="e.g. Ready to quote first charter in 2 weeks"
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-              />
-            </Field>
-
-            <Field label="Upload internal document (optional)">
-              <label
-                onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                onDragLeave={() => setDrag(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDrag(false);
-                  handleFile(e.dataTransfer.files?.[0] ?? null);
-                }}
-                className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-8 text-center transition ${
-                  drag ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-slate-50 hover:bg-slate-100"
-                }`}
-              >
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-                />
-                {file ? (
-                  <div className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200">
-                    <FileText className="h-4 w-4 text-indigo-600" />
-                    <span className="text-slate-800">{file.name}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.preventDefault(); setFile(null); }}
-                      className="rounded p-0.5 text-slate-400 hover:text-slate-700"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <Upload className="h-6 w-6 text-slate-400" />
-                    <div className="text-sm font-medium text-slate-700">
-                      Drag & drop a PDF, or click to browse
-                    </div>
-                    <div className="text-xs text-slate-500">PDF only, up to ~30 pages</div>
-                  </>
-                )}
-              </label>
-            </Field>
-
-            {error && (
-              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
-                {error}
+                <NewHireContent />
+                <p className="mt-6 text-sm" style={{ color: "var(--ink-4)" }}>
+                  Ask your manager to share a course link to get started.
+                </p>
               </div>
             )}
-
-            <button
-              type="submit"
-              disabled={parsing}
-              className="w-full rounded-2xl px-5 py-4 text-base font-semibold text-white shadow-md transition hover:shadow-lg hover:scale-[1.01] disabled:opacity-60"
-              style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)" }}
-            >
-              {parsing ? "Reading PDF…" : "Generate My Course →"}
-            </button>
-
-            <p className="text-center text-xs text-slate-400">
-              Free to use · No account required · Powered by Claude AI
-            </p>
-          </form>
+          </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-100 bg-white py-8">
+      <footer className="py-8" style={{ borderTop: "1px solid var(--line)", background: "var(--bg)" }}>
         <div className="mx-auto max-w-6xl px-6 sm:px-10">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
             <SynclyLogo size="sm" />
-            <p className="text-xs text-slate-400">
+            <p className="text-xs" style={{ color: "var(--ink-4)" }}>
               © {new Date().getFullYear()} Syncly.ai — AI-powered employee onboarding
             </p>
           </div>
@@ -375,21 +357,27 @@ function Intake() {
   );
 }
 
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
+function NewHireContent() {
   return (
     <div>
-      <label className="mb-1.5 block text-sm font-medium text-slate-700">
-        {label} {required && <span className="text-indigo-600">*</span>}
-      </label>
-      {children}
+      <div className="mb-5 flex items-center justify-between">
+        <div
+          className="flex h-11 w-11 items-center justify-center rounded-xl"
+          style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)" }}
+        >
+          <GraduationCap className="h-5 w-5 text-white" />
+        </div>
+        <span className="eyebrow-mono">02</span>
+      </div>
+      <h3
+        className="mb-2"
+        style={{ fontFamily: "var(--font-display)", fontWeight: 400, fontSize: 22, letterSpacing: "-0.01em", color: "var(--ink)" }}
+      >
+        I'm a New Hire
+      </h3>
+      <p className="text-sm leading-relaxed" style={{ color: "var(--ink-3)" }}>
+        Five days, five quizzes, and an AI assistant that knows your company. Let's get you synced.
+      </p>
     </div>
   );
 }

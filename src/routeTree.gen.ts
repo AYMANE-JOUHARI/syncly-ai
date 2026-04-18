@@ -9,16 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as GeneratingRouteImport } from './routes/generating'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CourseCourseIdRouteImport } from './routes/course.$courseId'
 import { Route as CourseCourseIdIndexRouteImport } from './routes/course.$courseId.index'
+import { Route as CourseCourseIdRoleplayRouteImport } from './routes/course.$courseId.roleplay'
 import { Route as CourseCourseIdCompleteRouteImport } from './routes/course.$courseId.complete'
 import { Route as CourseCourseIdCertificateRouteImport } from './routes/course.$courseId.certificate'
 import { Route as CourseCourseIdSectionSectionIdRouteImport } from './routes/course.$courseId.section.$sectionId'
 import { Route as CourseCourseIdSectionSectionIdIndexRouteImport } from './routes/course.$courseId.section.$sectionId.index'
 import { Route as CourseCourseIdSectionSectionIdQuizRouteImport } from './routes/course.$courseId.section.$sectionId.quiz'
 
+const ManagerRoute = ManagerRouteImport.update({
+  id: '/manager',
+  path: '/manager',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GeneratingRoute = GeneratingRouteImport.update({
   id: '/generating',
   path: '/generating',
@@ -37,6 +44,11 @@ const CourseCourseIdRoute = CourseCourseIdRouteImport.update({
 const CourseCourseIdIndexRoute = CourseCourseIdIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => CourseCourseIdRoute,
+} as any)
+const CourseCourseIdRoleplayRoute = CourseCourseIdRoleplayRouteImport.update({
+  id: '/roleplay',
+  path: '/roleplay',
   getParentRoute: () => CourseCourseIdRoute,
 } as any)
 const CourseCourseIdCompleteRoute = CourseCourseIdCompleteRouteImport.update({
@@ -72,9 +84,11 @@ const CourseCourseIdSectionSectionIdQuizRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/generating': typeof GeneratingRoute
+  '/manager': typeof ManagerRoute
   '/course/$courseId': typeof CourseCourseIdRouteWithChildren
   '/course/$courseId/certificate': typeof CourseCourseIdCertificateRoute
   '/course/$courseId/complete': typeof CourseCourseIdCompleteRoute
+  '/course/$courseId/roleplay': typeof CourseCourseIdRoleplayRoute
   '/course/$courseId/': typeof CourseCourseIdIndexRoute
   '/course/$courseId/section/$sectionId': typeof CourseCourseIdSectionSectionIdRouteWithChildren
   '/course/$courseId/section/$sectionId/quiz': typeof CourseCourseIdSectionSectionIdQuizRoute
@@ -83,8 +97,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/generating': typeof GeneratingRoute
+  '/manager': typeof ManagerRoute
   '/course/$courseId/certificate': typeof CourseCourseIdCertificateRoute
   '/course/$courseId/complete': typeof CourseCourseIdCompleteRoute
+  '/course/$courseId/roleplay': typeof CourseCourseIdRoleplayRoute
   '/course/$courseId': typeof CourseCourseIdIndexRoute
   '/course/$courseId/section/$sectionId/quiz': typeof CourseCourseIdSectionSectionIdQuizRoute
   '/course/$courseId/section/$sectionId': typeof CourseCourseIdSectionSectionIdIndexRoute
@@ -93,9 +109,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/generating': typeof GeneratingRoute
+  '/manager': typeof ManagerRoute
   '/course/$courseId': typeof CourseCourseIdRouteWithChildren
   '/course/$courseId/certificate': typeof CourseCourseIdCertificateRoute
   '/course/$courseId/complete': typeof CourseCourseIdCompleteRoute
+  '/course/$courseId/roleplay': typeof CourseCourseIdRoleplayRoute
   '/course/$courseId/': typeof CourseCourseIdIndexRoute
   '/course/$courseId/section/$sectionId': typeof CourseCourseIdSectionSectionIdRouteWithChildren
   '/course/$courseId/section/$sectionId/quiz': typeof CourseCourseIdSectionSectionIdQuizRoute
@@ -106,9 +124,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/generating'
+    | '/manager'
     | '/course/$courseId'
     | '/course/$courseId/certificate'
     | '/course/$courseId/complete'
+    | '/course/$courseId/roleplay'
     | '/course/$courseId/'
     | '/course/$courseId/section/$sectionId'
     | '/course/$courseId/section/$sectionId/quiz'
@@ -117,8 +137,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/generating'
+    | '/manager'
     | '/course/$courseId/certificate'
     | '/course/$courseId/complete'
+    | '/course/$courseId/roleplay'
     | '/course/$courseId'
     | '/course/$courseId/section/$sectionId/quiz'
     | '/course/$courseId/section/$sectionId'
@@ -126,9 +148,11 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/generating'
+    | '/manager'
     | '/course/$courseId'
     | '/course/$courseId/certificate'
     | '/course/$courseId/complete'
+    | '/course/$courseId/roleplay'
     | '/course/$courseId/'
     | '/course/$courseId/section/$sectionId'
     | '/course/$courseId/section/$sectionId/quiz'
@@ -138,11 +162,19 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GeneratingRoute: typeof GeneratingRoute
+  ManagerRoute: typeof ManagerRoute
   CourseCourseIdRoute: typeof CourseCourseIdRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/manager': {
+      id: '/manager'
+      path: '/manager'
+      fullPath: '/manager'
+      preLoaderRoute: typeof ManagerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/generating': {
       id: '/generating'
       path: '/generating'
@@ -169,6 +201,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/course/$courseId/'
       preLoaderRoute: typeof CourseCourseIdIndexRouteImport
+      parentRoute: typeof CourseCourseIdRoute
+    }
+    '/course/$courseId/roleplay': {
+      id: '/course/$courseId/roleplay'
+      path: '/roleplay'
+      fullPath: '/course/$courseId/roleplay'
+      preLoaderRoute: typeof CourseCourseIdRoleplayRouteImport
       parentRoute: typeof CourseCourseIdRoute
     }
     '/course/$courseId/complete': {
@@ -230,6 +269,7 @@ const CourseCourseIdSectionSectionIdRouteWithChildren =
 interface CourseCourseIdRouteChildren {
   CourseCourseIdCertificateRoute: typeof CourseCourseIdCertificateRoute
   CourseCourseIdCompleteRoute: typeof CourseCourseIdCompleteRoute
+  CourseCourseIdRoleplayRoute: typeof CourseCourseIdRoleplayRoute
   CourseCourseIdIndexRoute: typeof CourseCourseIdIndexRoute
   CourseCourseIdSectionSectionIdRoute: typeof CourseCourseIdSectionSectionIdRouteWithChildren
 }
@@ -237,6 +277,7 @@ interface CourseCourseIdRouteChildren {
 const CourseCourseIdRouteChildren: CourseCourseIdRouteChildren = {
   CourseCourseIdCertificateRoute: CourseCourseIdCertificateRoute,
   CourseCourseIdCompleteRoute: CourseCourseIdCompleteRoute,
+  CourseCourseIdRoleplayRoute: CourseCourseIdRoleplayRoute,
   CourseCourseIdIndexRoute: CourseCourseIdIndexRoute,
   CourseCourseIdSectionSectionIdRoute:
     CourseCourseIdSectionSectionIdRouteWithChildren,
@@ -249,6 +290,7 @@ const CourseCourseIdRouteWithChildren = CourseCourseIdRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GeneratingRoute: GeneratingRoute,
+  ManagerRoute: ManagerRoute,
   CourseCourseIdRoute: CourseCourseIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport

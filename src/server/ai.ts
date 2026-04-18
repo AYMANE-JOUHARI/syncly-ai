@@ -16,9 +16,9 @@ const SYSTEM_PROMPT = `You are a world-class onboarding course designer used by 
 
 Rules:
 - Produce exactly 5 or 6 sections in a clear, logical learning progression.
-- Each section must have substantial prose content (400-600 words), written in clear paragraphs separated by blank lines.
+- Each section must have substantial prose content (400-600 words) using rich markdown formatting.
+- Use ## for major headings within a section, ### for sub-headings, **bold** for key terms, *italic* for emphasis, - for bullet lists, > for blockquotes of important insights or quotes.
 - Content must be practical, actionable, and specific — not generic filler.
-- Use plain text paragraphs separated by blank lines. No markdown headers or bullets inside content fields.
 - Each section has a 1-2 sentence summary and exactly 4 multiple-choice questions.
 - Questions test genuine comprehension and application, not rote recall.
 - Each question has four options labeled A, B, C, D with exactly one correct answer.
@@ -60,7 +60,7 @@ const buildCourseTool: Anthropic.Tool = {
             title: { type: "string" },
             content: {
               type: "string",
-              description: "400-600 words of clear prose paragraphs separated by blank lines. No markdown.",
+              description: "400-600 words using rich markdown: ## headings, ### sub-headings, **bold** key terms, - bullet lists, > blockquotes for important insights.",
             },
             summary: { type: "string", description: "1-2 sentence section summary" },
             quiz: {
@@ -122,16 +122,19 @@ Learning goal: ${data.goal}${
 
     const response = await client.messages.create({
       model: MODEL,
-      max_tokens: 8192,
+      max_tokens: 16000,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [buildCourseTool],
       tool_choice: { type: "tool", name: "build_course" },
       messages: [{ role: "user", content: userPrompt }],
     });
 
+    if (response.stop_reason === "max_tokens") throw new Error("Course generation was cut short. Please try again with a shorter role description or smaller PDF.");
+
     const toolUse = response.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") throw new Error("Malformed AI response");
     const parsed = toolUse.input as CourseShape;
+    if (!Array.isArray(parsed.sections) || parsed.sections.length === 0) throw new Error("AI returned an empty course. Please try again.");
 
     const { data: course, error: cErr } = await supabaseAdmin
       .from("courses")
@@ -162,7 +165,7 @@ Learning goal: ${data.goal}${
         .single();
       if (sErr || !sec) throw new Error(sErr?.message ?? "Failed to save section");
 
-      const rows = s.quiz.map((q, qi) => ({
+      const rows = (s.quiz ?? []).map((q, qi) => ({
         section_id: sec.id,
         question: q.question,
         option_a: q.options[0],
@@ -290,6 +293,174 @@ export const askTutor = createServerFn({ method: "POST" })
     await supabaseAdmin
       .from("chat_messages")
       .insert({ course_id: data.courseId, role: "assistant", content: text });
+
+    return { reply: text as string };
+  });
+
+export const updateSectionTitle = createServerFn({ method: "POST" })
+  .inputValidator((d: { sectionId: string; title: string }) => {
+    if (!d || typeof d.sectionId !== "string" || typeof d.title !== "string")
+      throw new Error("Invalid input");
+    if (!/^[0-9a-f-]{36}$/i.test(d.sectionId)) throw new Error("Invalid sectionId");
+    return { sectionId: d.sectionId, title: clip(d.title, 200) };
+  })
+  .handler(async ({ data }) => {
+    const { error } = await supabaseAdmin
+      .from("sections")
+      .update({ title: data.title })
+      .eq("id", data.sectionId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const refineCourse = createServerFn({ method: "POST" })
+  .inputValidator((d: { courseId: string; instruction: string }) => {
+    if (!d || typeof d.courseId !== "string" || typeof d.instruction !== "string")
+      throw new Error("Invalid input");
+    if (!/^[0-9a-f-]{36}$/i.test(d.courseId)) throw new Error("Invalid courseId");
+    return { courseId: d.courseId, instruction: clip(d.instruction, 1000) };
+  })
+  .handler(async ({ data }) => {
+    const client = getClient();
+
+    const { data: course } = await supabaseAdmin
+      .from("courses")
+      .select("course_title, learner_goal")
+      .eq("id", data.courseId)
+      .single();
+
+    const { data: sections } = await supabaseAdmin
+      .from("sections")
+      .select("id, title, summary, order_index")
+      .eq("course_id", data.courseId)
+      .order("order_index");
+
+    if (!sections?.length) throw new Error("Course sections not found");
+
+    const currentStructure = sections
+      .map((s, i) => `Section ${i + 1}: "${s.title}" — ${s.summary}`)
+      .join("\n");
+
+    const prompt = `You are refining an onboarding course curriculum based on manager feedback.
+
+Course: ${course?.course_title}
+Goal: ${course?.learner_goal}
+
+Current sections:
+${currentStructure}
+
+Manager instruction: "${data.instruction}"
+
+Apply the instruction. Return ONLY valid JSON (no markdown fences) with this exact shape:
+{
+  "summary": "One sentence describing what changed.",
+  "sections": [
+    { "id": "...", "title": "...", "summary": "..." }
+  ]
+}
+
+Only include sections that changed. Keep ids exactly as given.`;
+
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+    let parsed: { summary: string; sections: { id: string; title: string; summary: string }[] };
+
+    try {
+      parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, "").trim());
+    } catch {
+      return { summary: "Applied your feedback to the curriculum.", sections: [] };
+    }
+
+    // Update changed sections in Supabase
+    for (const s of parsed.sections ?? []) {
+      if (!/^[0-9a-f-]{36}$/i.test(s.id)) continue;
+      await supabaseAdmin
+        .from("sections")
+        .update({ title: s.title, summary: s.summary })
+        .eq("id", s.id);
+    }
+
+    return { summary: parsed.summary ?? "Changes applied.", sections: parsed.sections ?? [] };
+  });
+
+export const roleplayChat = createServerFn({ method: "POST" })
+  .inputValidator(
+    (d: { courseId: string; message: string; history: { role: string; content: string }[] }) => {
+      if (!d || typeof d.courseId !== "string" || typeof d.message !== "string")
+        throw new Error("Invalid input");
+      if (!/^[0-9a-f-]{36}$/i.test(d.courseId)) throw new Error("Invalid courseId");
+      const history = Array.isArray(d.history)
+        ? d.history.slice(-20).map((m) => ({
+            role: m?.role === "assistant" ? "assistant" : "user",
+            content: clip(String(m?.content ?? ""), 2000),
+          }))
+        : [];
+      return { courseId: d.courseId, message: clip(d.message, 1000), history };
+    }
+  )
+  .handler(async ({ data }) => {
+    const client = getClient();
+
+    const { data: course } = await supabaseAdmin
+      .from("courses")
+      .select("course_title, learner_goal, role")
+      .eq("id", data.courseId)
+      .single();
+    const { data: sections } = await supabaseAdmin
+      .from("sections")
+      .select("title, summary")
+      .eq("course_id", data.courseId)
+      .order("order_index");
+
+    const sectionList = (sections ?? [])
+      .map((s, i) => `${i + 1}. ${s.title} — ${s.summary}`)
+      .join("\n");
+
+    const systemText = `You are running a professional roleplay simulation for someone learning the role of "${course?.role ?? "professional"}".
+
+Course: ${course?.course_title}
+Goal: ${course?.learner_goal}
+Topics covered:
+${sectionList}
+
+Your task:
+- Act as a realistic workplace character relevant to this role (client, manager, colleague, or customer — pick the most fitting)
+- Create a realistic, challenging but supportive scenario that tests what the learner just studied
+- Stay fully in character throughout the conversation
+- If this is the first message (user says "start" or similar), introduce yourself and the scenario naturally
+- Ask probing questions, react realistically to their responses, give them opportunities to demonstrate knowledge
+- Keep responses concise (2-4 sentences) so the conversation flows naturally
+- After 6+ exchanges, if the user says "end" or asks for feedback, step out of character and give a brief, specific coaching summary (what they did well, one area to improve)
+
+Never break character unless explicitly asked for feedback. Never reveal you are an AI mid-roleplay.`;
+
+    const isFirst = data.history.length === 0;
+    const userMessage = isFirst
+      ? `Start the roleplay scenario. Introduce yourself and the situation naturally in 2-3 sentences.`
+      : data.message;
+
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 512,
+      system: [{ type: "text", text: systemText, cache_control: { type: "ephemeral" } }],
+      messages: [
+        ...data.history.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+        { role: "user", content: userMessage },
+      ],
+    });
+
+    const text =
+      response.content[0]?.type === "text"
+        ? response.content[0].text
+        : "Let's begin the scenario. I'm ready when you are.";
 
     return { reply: text as string };
   });

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { ArrowLeft, CheckCircle2, XCircle, Lightbulb } from "lucide-react";
 import { ChatSidebar } from "@/components/ChatSidebar";
@@ -58,9 +58,7 @@ function Quiz() {
     if (submitted || !q) return;
     const handler = (e: KeyboardEvent) => {
       const map: Record<string, string> = { "1": "A", "2": "B", "3": "C", "4": "D" };
-      if (map[e.key]) {
-        setAnswers((a) => ({ ...a, [q.id]: map[e.key] }));
-      }
+      if (map[e.key]) setAnswers((a) => ({ ...a, [q.id]: map[e.key] }));
       if (e.key === "Enter" && answers[q?.id]) {
         if (idx < questions.length - 1) setIdx((i) => i + 1);
         else void doSubmit();
@@ -74,6 +72,7 @@ function Quiz() {
     ? questions.filter((qq) => answers[qq.id] === qq.correct_answer).length / questions.length
     : 0;
   const pct = Math.round(score * 100);
+  const correct = submitted ? questions.filter((qq) => answers[qq.id] === qq.correct_answer).length : 0;
   const displayPct = useCountUp(pct, 1000, submitted);
 
   const select = (key: string) => {
@@ -88,25 +87,18 @@ function Quiz() {
 
   const doSubmit = async () => {
     setSubmitted(true);
-    let correct = 0;
     const wrongTopics: string[] = [];
     for (const ques of questions) {
       const sel = answers[ques.id];
-      if (sel === ques.correct_answer) correct++;
-      else wrongTopics.push(ques.question.slice(0, 80));
+      if (sel !== ques.correct_answer) wrongTopics.push(ques.question.slice(0, 80));
       try { await record({ data: { questionId: ques.id, selected: sel ?? "" } }); } catch {}
     }
-    const finalScore = correct / questions.length;
+    const finalScore = questions.filter((qq) => answers[qq.id] === qq.correct_answer).length / questions.length;
     setProgress(sectionId, { completed: true, quizScore: finalScore, answers });
 
-    // Fire-and-forget insight generation
     setInsightLoading(true);
     getInsight({
-      data: {
-        sectionTitle: section?.title ?? "this section",
-        score: finalScore,
-        wrongTopics,
-      },
+      data: { sectionTitle: section?.title ?? "this section", score: finalScore, wrongTopics },
     })
       .then(({ insight: text }) => {
         setInsight(text);
@@ -117,7 +109,11 @@ function Quiz() {
   };
 
   if (!course || !section) {
-    return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500">Loading…</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--bg)", color: "var(--ink-3)" }}>
+        Loading…
+      </div>
+    );
   }
 
   const sectionIdx = course.sections.findIndex((s) => s.id === sectionId);
@@ -125,76 +121,140 @@ function Quiz() {
   const nextSection = !isLastSection ? course.sections[sectionIdx + 1] : null;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen flex" style={{ background: "var(--bg)" }}>
       <div className="flex-1 min-w-0">
-        <header className="border-b border-slate-200 bg-white px-5 sm:px-8 py-4 flex items-center justify-between">
-          <Link
-            to="/course/$courseId/section/$sectionId"
-            params={{ courseId, sectionId }}
-            className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900"
+        {/* Header */}
+        <header
+          className="flex items-center justify-between px-5 sm:px-8 py-4"
+          style={{ borderBottom: "1px solid var(--line)", background: "white" }}
+        >
+          <button
+            onClick={() => navigate({ to: "/course/$courseId/section/$sectionId", params: { courseId, sectionId } })}
+            className="inline-flex items-center gap-1.5 text-sm transition"
+            style={{ color: "var(--ink-3)" }}
           >
             <ArrowLeft className="h-4 w-4" /> Back to section
-          </Link>
-          <span className="text-xs font-medium text-indigo-600 uppercase tracking-wide">Quiz</span>
+          </button>
+          <span
+            style={{
+              fontFamily: "var(--font-mono-syncly)",
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#4f46e5",
+            }}
+          >
+            Quiz
+          </span>
         </header>
 
-        <main className="mx-auto max-w-2xl px-5 sm:px-8 pt-10 pb-24">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mb-1">
-            {section.title}
-          </h1>
+        <main style={{ maxWidth: 720, margin: "0 auto", padding: "60px 40px 120px" }}>
+          {/* Quiz heading */}
+          <div className="mb-8">
+            <p
+              className="eyebrow-mono mb-2"
+              style={{ color: "#4f46e5" }}
+            >
+              QUIZ · {section.title.toUpperCase().slice(0, 40)}
+            </p>
+            <h1
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 400,
+                fontSize: "clamp(32px, 4vw, 44px)",
+                letterSpacing: "-0.02em",
+                margin: "0 0 8px",
+                lineHeight: 1.05,
+                color: "var(--ink)",
+              }}
+            >
+              {section.title}
+            </h1>
+            <p style={{ color: "var(--ink-3)", fontSize: 15.5, margin: 0 }}>
+              {questions.length} questions — press 1–4 to select, Enter to continue
+            </p>
+          </div>
 
           {!submitted ? (
-            <div className="mt-6">
-              {/* Progress dots */}
-              <div className="flex items-center gap-2 mb-6">
+            <div>
+              {/* Progress segments */}
+              <div className="flex gap-1.5 mb-8">
                 {questions.map((_, i) => (
                   <div
                     key={i}
-                    className={`h-2 rounded-full transition-all ${
-                      i < idx
-                        ? "w-6 bg-emerald-400"
-                        : i === idx
-                          ? "w-8 bg-indigo-500"
-                          : "w-2 bg-slate-200"
-                    }`}
+                    className="flex-1 rounded-full"
+                    style={{
+                      height: 4,
+                      background: i < idx ? "#4f46e5" : i === idx ? "var(--ink)" : "var(--bg-deep)",
+                      transition: "background .3s",
+                    }}
                   />
                 ))}
-                <span className="ml-2 text-xs text-slate-500">
-                  {idx + 1} / {questions.length}
-                </span>
               </div>
 
-              <div
-                key={`q-${idx}`}
-                className="animate-in fade-in slide-in-from-right-4 duration-200"
-              >
-                <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
-                  <p className="text-lg font-medium text-slate-900 leading-snug">{q.question}</p>
-                  <p className="mt-1 text-xs text-slate-400">Press 1–4 to select, Enter to continue</p>
-                  <div className="mt-5 grid gap-2.5">
+              <div key={`q-${idx}`} className="animate-in fade-in slide-in-from-right-4 duration-200">
+                <div
+                  className="rounded-2xl p-10"
+                  style={{
+                    background: "white",
+                    border: "1px solid var(--line)",
+                    boxShadow: "0 1px 0 rgba(20,19,26,.04), 0 8px 24px -8px rgba(20,19,26,.10)",
+                  }}
+                >
+                  <p className="eyebrow-mono mb-2">
+                    QUESTION {idx + 1} OF {questions.length}
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontWeight: 400,
+                      fontSize: 24,
+                      lineHeight: 1.25,
+                      margin: "8px 0 28px",
+                      letterSpacing: "-0.01em",
+                      color: "var(--ink)",
+                      textWrap: "pretty" as any,
+                    }}
+                  >
+                    {q.question}
+                  </p>
+
+                  <div className="flex flex-col gap-2.5">
                     {q.options.map((opt, oi) => {
                       const selected = answers[q.id] === opt.key;
                       return (
                         <button
                           key={opt.key}
                           onClick={() => select(opt.key)}
-                          className={`flex items-start gap-3 rounded-xl border px-4 py-3.5 text-left text-sm transition hover:shadow-sm ${
-                            selected
-                              ? "border-indigo-500 bg-indigo-50 text-indigo-900 ring-2 ring-indigo-100"
-                              : "border-slate-200 bg-white hover:border-slate-300"
-                          }`}
+                          className="flex items-center gap-3.5 text-left w-full transition"
+                          style={{
+                            padding: "16px 18px",
+                            border: selected ? "1px solid var(--ink)" : "1px solid var(--line)",
+                            borderRadius: 10,
+                            background: selected ? "var(--bg-deep)" : "white",
+                          }}
                         >
+                          {/* Kbd badge */}
                           <span
-                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold ${
-                              selected ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
-                            }`}
+                            style={{
+                              width: 26,
+                              height: 26,
+                              borderRadius: 6,
+                              flexShrink: 0,
+                              display: "grid",
+                              placeItems: "center",
+                              fontFamily: "var(--font-mono-syncly)",
+                              fontSize: 12,
+                              fontWeight: 500,
+                              background: selected ? "var(--ink)" : "var(--bg-deep)",
+                              color: selected ? "var(--bg)" : "var(--ink-2)",
+                            }}
                           >
                             {oi + 1}
                           </span>
-                          <span className="flex-1">{opt.text}</span>
-                          {selected && (
-                            <CheckCircle2 className="h-4 w-4 text-indigo-500 shrink-0 mt-0.5" />
-                          )}
+                          <span style={{ flex: 1, fontSize: 15, lineHeight: 1.4, color: "var(--ink)" }}>
+                            {opt.text}
+                          </span>
                         </button>
                       );
                     })}
@@ -203,7 +263,7 @@ function Quiz() {
               </div>
 
               <div className="mt-6 flex justify-between items-center">
-                <span className="text-xs text-slate-400">
+                <span style={{ fontSize: 12, color: "var(--ink-4)", fontFamily: "var(--font-mono-syncly)" }}>
                   {Object.keys(answers).length} / {questions.length} answered
                 </span>
                 <button
@@ -217,37 +277,92 @@ function Quiz() {
               </div>
             </div>
           ) : (
-            <div className="mt-6 animate-in fade-in duration-300">
+            <div className="animate-in fade-in duration-300">
               {/* Score card */}
-              <div className="rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-100 text-center">
-                <p className="text-sm font-medium uppercase tracking-wide text-slate-500 mb-2">
-                  Your score
-                </p>
+              <div
+                className="rounded-2xl p-8 text-center"
+                style={{
+                  background: "white",
+                  border: "1px solid var(--line)",
+                  boxShadow: "0 1px 0 rgba(20,19,26,.04), 0 8px 24px -8px rgba(20,19,26,.10)",
+                }}
+              >
+                <p className="eyebrow-mono mb-3">Your Score</p>
                 <div
-                  className="inline-block bg-clip-text text-transparent text-6xl font-extrabold mb-2"
-                  style={{ backgroundImage: "linear-gradient(135deg, #6366f1, #9333ea)" }}
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 400,
+                    fontSize: 64,
+                    lineHeight: 1,
+                    letterSpacing: "-0.02em",
+                    color: "var(--ink)",
+                  }}
                 >
                   {displayPct}%
                 </div>
-                <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden max-w-xs mx-auto">
+
+                {/* Score bar */}
+                <div
+                  className="rounded-full overflow-hidden mx-auto mt-4"
+                  style={{ height: 8, background: "var(--bg-deep)", maxWidth: 280 }}
+                >
                   <div
                     className="h-full rounded-full transition-all duration-1000"
                     style={{
                       width: `${pct}%`,
-                      background: pct >= 70 ? "linear-gradient(90deg, #10b981, #059669)" : "linear-gradient(90deg, #f59e0b, #d97706)",
+                      background: pct >= 70 ? "#1f7a52" : "#9a5b10",
                     }}
                   />
                 </div>
-                <p className="mt-3 text-sm text-slate-600">
+
+                <p className="mt-4 text-sm" style={{ color: "var(--ink-3)", maxWidth: 360, margin: "16px auto 0" }}>
                   {pct >= 90 ? "Outstanding — you've nailed this section."
                     : pct >= 70 ? "Solid work. You're ready to move on."
                     : pct >= 50 ? "Decent start — review the section to lock in key ideas."
                     : "Worth another read-through before moving on."}
                 </p>
+
+                {/* 3-col stats grid */}
+                <div className="grid grid-cols-3 gap-3 mt-6 max-w-xs mx-auto">
+                  {[
+                    { n: correct, l: "Correct" },
+                    { n: questions.length - correct, l: "Missed" },
+                    { n: `${pct}%`, l: "Score" },
+                  ].map(({ n, l }) => (
+                    <div
+                      key={l}
+                      className="rounded-xl p-3 text-center"
+                      style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
+                    >
+                      <div
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          fontSize: 28,
+                          fontWeight: 400,
+                          letterSpacing: "-0.02em",
+                          color: "var(--ink)",
+                        }}
+                      >
+                        {n}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-mono-syncly)",
+                          fontSize: 10,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                          color: "var(--ink-3)",
+                        }}
+                      >
+                        {l}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* AI Insight card */}
-              <div className="mt-4 rounded-2xl bg-indigo-50 p-5 ring-1 ring-indigo-100">
+              <div className="mt-4 rounded-2xl p-5" style={{ background: "#eceafd", border: "1px solid #c7c3f7" }}>
                 <div className="flex items-start gap-3">
                   <div
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
@@ -256,18 +371,21 @@ function Quiz() {
                     <Lightbulb className="h-4 w-4 text-white" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 mb-1">
+                    <p
+                      className="eyebrow-mono mb-1"
+                      style={{ color: "#4f46e5" }}
+                    >
                       AI Coach Insight
                     </p>
                     {insightLoading ? (
                       <div className="space-y-1.5">
-                        <div className="h-3 w-3/4 rounded bg-indigo-200 animate-pulse" />
-                        <div className="h-3 w-1/2 rounded bg-indigo-200 animate-pulse" />
+                        <div className="h-3 w-3/4 rounded animate-pulse" style={{ background: "#c7c3f7" }} />
+                        <div className="h-3 w-1/2 rounded animate-pulse" style={{ background: "#c7c3f7" }} />
                       </div>
                     ) : insight ? (
-                      <p className="text-sm text-indigo-900 leading-relaxed">{insight}</p>
+                      <p className="text-sm leading-relaxed" style={{ color: "#2e2890" }}>{insight}</p>
                     ) : (
-                      <p className="text-sm text-indigo-600 italic">Generating feedback…</p>
+                      <p className="text-sm italic" style={{ color: "#4f46e5" }}>Generating feedback…</p>
                     )}
                   </div>
                 </div>
@@ -275,41 +393,57 @@ function Quiz() {
 
               {/* Question breakdown */}
               <div className="mt-6 space-y-3">
-                <h2 className="text-sm font-semibold text-slate-700">Question review</h2>
+                <h2 className="text-sm font-semibold" style={{ color: "var(--ink-2)" }}>Question review</h2>
                 {questions.map((qq, i) => {
                   const sel = answers[qq.id];
                   const ok = sel === qq.correct_answer;
                   return (
-                    <div key={qq.id} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+                    <div
+                      key={qq.id}
+                      className="rounded-2xl p-5"
+                      style={{ background: "white", border: "1px solid var(--line)" }}
+                    >
                       <div className="flex items-start gap-2">
                         {ok ? (
-                          <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                          <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "#1f7a52" }} />
                         ) : (
-                          <XCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+                          <XCircle className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "#a3321f" }} />
                         )}
-                        <p className="font-medium text-slate-900 text-sm">
+                        <p className="font-medium text-sm" style={{ color: "var(--ink)" }}>
                           {i + 1}. {qq.question}
                         </p>
                       </div>
-                      <div className="mt-3 grid gap-1.5">
+                      <div className="mt-3 flex flex-col gap-1.5">
                         {qq.options.map((opt) => {
                           const isCorrect = opt.key === qq.correct_answer;
                           const isSelected = opt.key === sel;
                           return (
                             <div
                               key={opt.key}
-                              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                                isCorrect
-                                  ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                              className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                              style={{
+                                border: isCorrect
+                                  ? "1px solid #6ee7b7"
                                   : isSelected && !isCorrect
-                                    ? "border-red-300 bg-red-50 text-red-900"
-                                    : "border-slate-200 bg-white text-slate-600"
-                              }`}
+                                    ? "1px solid #fca5a5"
+                                    : "1px solid var(--line)",
+                                background: isCorrect ? "#f0fdf4" : isSelected && !isCorrect ? "#fef2f2" : "white",
+                                color: isCorrect ? "#166534" : isSelected && !isCorrect ? "#7f1d1d" : "var(--ink-3)",
+                              }}
                             >
-                              <span className="font-semibold w-4 shrink-0">{opt.key}.</span>
+                              <span
+                                style={{
+                                  fontFamily: "var(--font-mono-syncly)",
+                                  fontWeight: 500,
+                                  width: 16,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {opt.key}.
+                              </span>
                               <span className="flex-1">{opt.text}</span>
-                              {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />}
-                              {isSelected && !isCorrect && <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />}
+                              {isCorrect && <CheckCircle2 className="h-3.5 w-3.5 shrink-0" style={{ color: "#1f7a52" }} />}
+                              {isSelected && !isCorrect && <XCircle className="h-3.5 w-3.5 shrink-0" style={{ color: "#a3321f" }} />}
                             </div>
                           );
                         })}
@@ -320,21 +454,16 @@ function Quiz() {
               </div>
 
               <div className="mt-8 flex justify-end gap-3 flex-wrap">
-                <Link
-                  to="/course/$courseId"
-                  params={{ courseId }}
-                  className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 transition"
+                <button
+                  onClick={() => navigate({ to: "/course/$courseId", params: { courseId } })}
+                  className="rounded-2xl px-5 py-3 text-sm font-semibold transition"
+                  style={{ background: "white", color: "var(--ink-2)", border: "1px solid var(--line)" }}
                 >
                   Course home
-                </Link>
+                </button>
                 {nextSection ? (
                   <button
-                    onClick={() =>
-                      navigate({
-                        to: "/course/$courseId/section/$sectionId",
-                        params: { courseId, sectionId: nextSection.id },
-                      })
-                    }
+                    onClick={() => navigate({ to: "/course/$courseId/section/$sectionId", params: { courseId, sectionId: nextSection.id } })}
                     className="rounded-2xl px-5 py-3 text-sm font-semibold text-white shadow-md hover:shadow-lg transition"
                     style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)" }}
                   >

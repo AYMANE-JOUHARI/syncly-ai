@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import confetti from "canvas-confetti";
-import { Award, RefreshCw, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { Award, RefreshCw, Clock, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 import { SynclyLogo } from "@/components/SynclyLogo";
 import { useCourse } from "@/lib/course-context";
 import { fetchCourse } from "@/server/ai";
@@ -60,6 +60,7 @@ function Complete() {
   const finalPct = taken.length
     ? Math.round((taken.reduce((sum, b) => sum + b.score, 0) / taken.length) * 100)
     : 0;
+  const correctSections = taken.filter((b) => b.score >= 0.7).length;
 
   const displayPct = useCountUp(finalPct, 1500, ready);
 
@@ -81,7 +82,11 @@ function Complete() {
   }, [ready, finalPct]);
 
   if (!course) {
-    return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500">Loading…</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--bg)", color: "var(--ink-3)" }}>
+        Loading…
+      </div>
+    );
   }
 
   const strong = breakdown.filter((b) => b.score >= 0.8).map((b) => b.title);
@@ -99,104 +104,186 @@ function Complete() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white px-5 sm:px-8 py-4">
+    <div className="min-h-screen" style={{ background: "var(--bg)" }}>
+      <header
+        className="px-5 sm:px-8 py-4"
+        style={{ borderBottom: "1px solid var(--line)", background: "white" }}
+      >
         <SynclyLogo />
       </header>
 
       <main className="mx-auto max-w-2xl px-5 sm:px-8 py-12">
         {/* Score card */}
-        <div className="rounded-2xl bg-white p-8 sm:p-10 text-center shadow-sm ring-1 ring-slate-100">
+        <div
+          className="rounded-2xl p-8 sm:p-10 text-center"
+          style={{ background: "white", border: "1px solid var(--line)", boxShadow: "0 1px 0 rgba(20,19,26,.04), 0 8px 24px -8px rgba(20,19,26,.10)" }}
+        >
           <div
-            className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl text-white shadow-lg"
-            style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)" }}
+            className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl text-white"
+            style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)", boxShadow: "0 12px 32px -8px rgba(99,102,241,.4)" }}
           >
             <Award className="h-10 w-10" />
           </div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Course Complete</p>
-          <h1 className="mt-2 text-xl font-bold text-slate-900">{course.course_title}</h1>
 
-          <div className="mt-6">
-            <div
-              className="inline-block bg-clip-text text-transparent font-extrabold"
-              style={{
-                backgroundImage: "linear-gradient(135deg, #6366f1, #9333ea)",
-                fontSize: "clamp(3rem, 10vw, 5rem)",
-                lineHeight: 1,
-              }}
-            >
-              {displayPct}%
-            </div>
-            <p className="text-base font-semibold text-slate-500 mt-1">Final Score</p>
+          <p className="eyebrow-mono mb-2">Course Complete</p>
+          <h1
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 400,
+              fontSize: "clamp(18px, 3vw, 24px)",
+              letterSpacing: "-0.01em",
+              color: "var(--ink)",
+              margin: "4px 0 24px",
+            }}
+          >
+            {course.course_title}
+          </h1>
+
+          {/* Big score */}
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 400,
+              fontSize: "clamp(56px, 10vw, 80px)",
+              lineHeight: 1,
+              letterSpacing: "-0.02em",
+              color: "var(--ink)",
+            }}
+          >
+            {displayPct}%
           </div>
+          <p className="eyebrow-mono mt-2">Final Score</p>
 
           {/* Score bar */}
-          <div className="mt-5 h-2.5 rounded-full bg-slate-100 overflow-hidden max-w-xs mx-auto">
+          <div
+            className="rounded-full overflow-hidden mx-auto mt-5"
+            style={{ height: 10, background: "var(--bg-deep)", maxWidth: 280 }}
+          >
             <div
               className="h-full rounded-full transition-all duration-1000"
               style={{
                 width: ready ? `${finalPct}%` : "0%",
-                background: finalPct >= 70 ? "linear-gradient(90deg, #10b981, #059669)" : "linear-gradient(90deg, #f59e0b, #d97706)",
+                background: finalPct >= 70 ? "#1f7a52" : "#9a5b10",
               }}
             />
           </div>
 
-          <p className="mt-5 mx-auto max-w-md text-sm text-slate-600 leading-relaxed">{feedback}</p>
+          {/* Feedback */}
+          <p
+            className="mx-auto mt-5 max-w-md leading-relaxed"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontStyle: "italic",
+              fontWeight: 300,
+              fontSize: 17,
+              color: "var(--ink-2)",
+            }}
+          >
+            {feedback}
+          </p>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3 mt-6 max-w-sm mx-auto">
+            {[
+              { n: taken.length, l: "Quizzes" },
+              { n: `${correctSections}/${taken.length}`, l: "Passing" },
+              { n: totalTimeMins > 0 ? `${totalTimeMins}m` : "—", l: "Time spent" },
+            ].map(({ n, l }) => (
+              <div
+                key={l}
+                className="rounded-xl p-3 text-center"
+                style={{ background: "var(--bg)", border: "1px solid var(--line)" }}
+              >
+                <div
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: 26,
+                    fontWeight: 400,
+                    letterSpacing: "-0.02em",
+                    color: "var(--ink)",
+                  }}
+                >
+                  {n}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono-syncly)",
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                    color: "var(--ink-3)",
+                  }}
+                >
+                  {l}
+                </div>
+              </div>
+            ))}
+          </div>
 
           {totalTimeMins > 0 && (
-            <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-4 py-1.5 text-xs text-slate-500 ring-1 ring-slate-100">
-              <Clock className="h-3.5 w-3.5" /> Total time spent: {totalTimeMins} min
+            <div
+              className="mt-4 inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs"
+              style={{ background: "var(--bg)", color: "var(--ink-3)", border: "1px solid var(--line)" }}
+            >
+              <Clock className="h-3.5 w-3.5" /> Total time: {totalTimeMins} min
             </div>
           )}
         </div>
 
         {/* Section breakdown */}
-        <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
-          <h2 className="font-semibold text-slate-900 mb-4">Section breakdown</h2>
-          <ul className="space-y-3">
+        <div
+          className="mt-6 rounded-2xl p-6"
+          style={{ background: "white", border: "1px solid var(--line)" }}
+        >
+          <h2 className="font-semibold mb-4" style={{ color: "var(--ink)" }}>Section breakdown</h2>
+          <ul className="space-y-2">
             {breakdown.map((b, i) => {
               const isExpanded = expandedIdx === i;
               const timeMins = b.timeSecs > 0 ? Math.ceil(b.timeSecs / 60) : null;
               return (
-                <li key={b.id} className="rounded-xl overflow-hidden ring-1 ring-slate-100">
+                <li key={b.id} className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--line)" }}>
                   <button
-                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 transition"
+                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition"
+                    style={{ background: "white" }}
                     onClick={() => setExpandedIdx(isExpanded ? null : i)}
                   >
+                    {/* Segment dot */}
                     <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        !b.taken ? "bg-slate-300" : b.score >= 0.7 ? "bg-emerald-400" : "bg-amber-400"
-                      }`}
+                      className="h-2 w-2 rounded-full shrink-0"
+                      style={{
+                        background: !b.taken ? "var(--bg-deep)" : b.score >= 0.7 ? "#1f7a52" : "#9a5b10",
+                      }}
                     />
-                    <span className="flex-1 text-sm text-slate-700 text-left truncate">
-                      {i + 1}. {b.title}
+                    <span className="flex-1 text-sm truncate" style={{ color: "var(--ink-2)" }}>
+                      {String(i + 1).padStart(2, "0")}. {b.title}
                     </span>
                     {timeMins && (
-                      <span className="text-xs text-slate-400 shrink-0">{timeMins} min</span>
+                      <span style={{ fontSize: 12, color: "var(--ink-4)", flexShrink: 0, fontFamily: "var(--font-mono-syncly)" }}>
+                        {timeMins}m
+                      </span>
                     )}
                     <span
-                      className={`text-sm font-semibold shrink-0 min-w-[3rem] text-right ${
-                        !b.taken ? "text-slate-400" : b.score >= 0.7 ? "text-emerald-600" : "text-amber-600"
-                      }`}
+                      className="text-sm font-semibold shrink-0 min-w-[3rem] text-right"
+                      style={{ color: !b.taken ? "var(--ink-4)" : b.score >= 0.7 ? "#1f7a52" : "#9a5b10" }}
                     >
                       {b.taken ? `${Math.round(b.score * 100)}%` : "—"}
                     </span>
                     {b.taken && (
-                      <span className="shrink-0 text-slate-400">
+                      <span style={{ flexShrink: 0, color: "var(--ink-4)" }}>
                         {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </span>
                     )}
                   </button>
 
-                  {/* Score mini-bar */}
+                  {/* Mini score bar */}
                   {b.taken && (
-                    <div className="px-4 pb-1">
-                      <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="px-4 pb-1.5">
+                      <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-deep)" }}>
                         <div
                           className="h-full rounded-full transition-all duration-700"
                           style={{
                             width: `${Math.round(b.score * 100)}%`,
-                            background: b.score >= 0.7 ? "#10b981" : "#f59e0b",
+                            background: b.score >= 0.7 ? "#1f7a52" : "#9a5b10",
                           }}
                         />
                       </div>
@@ -205,9 +292,9 @@ function Complete() {
 
                   {/* Expanded insight */}
                   {isExpanded && b.insight && (
-                    <div className="px-4 pb-4 pt-2 bg-indigo-50 border-t border-indigo-100">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 mb-1">AI Coach Insight</p>
-                      <p className="text-sm text-indigo-900 leading-relaxed">{b.insight}</p>
+                    <div className="px-4 pb-4 pt-2" style={{ background: "#eceafd", borderTop: "1px solid #c7c3f7" }}>
+                      <p className="eyebrow-mono mb-1" style={{ color: "#4f46e5" }}>AI Coach Insight</p>
+                      <p className="text-sm leading-relaxed" style={{ color: "#2e2890" }}>{b.insight}</p>
                     </div>
                   )}
                 </li>
@@ -223,7 +310,8 @@ function Complete() {
               resetProgress();
               navigate({ to: "/course/$courseId", params: { courseId } });
             }}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 transition"
+            className="inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-sm font-semibold transition"
+            style={{ background: "white", color: "var(--ink-2)", border: "1px solid var(--line)" }}
           >
             <RefreshCw className="h-4 w-4" /> Retake Course
           </button>
@@ -237,8 +325,29 @@ function Complete() {
           </Link>
         </div>
 
+        {/* Roleplay CTA */}
+        <div
+          className="mt-5 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4"
+          style={{ background: "#eceafd", border: "1px solid #c7c3f7" }}
+        >
+          <div>
+            <p className="eyebrow-mono mb-1" style={{ color: "#4f46e5" }}>New — AI Roleplay Practice</p>
+            <p style={{ fontFamily: "var(--font-display)", fontWeight: 400, fontSize: 16, color: "#2e2890", margin: 0 }}>
+              Put your knowledge to the test in a realistic simulated scenario with an AI character.
+            </p>
+          </div>
+          <Link
+            to="/course/$courseId/roleplay"
+            params={{ courseId }}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition hover:scale-[1.02]"
+            style={{ background: "linear-gradient(135deg, #6366f1, #9333ea)" }}
+          >
+            <MessageSquare className="h-4 w-4" /> Start Roleplay
+          </Link>
+        </div>
+
         <div className="mt-8 text-center">
-          <Link to="/" className="text-sm text-slate-500 hover:text-slate-900">
+          <Link to="/" style={{ fontSize: 13, color: "var(--ink-4)" }}>
             Build another course →
           </Link>
         </div>

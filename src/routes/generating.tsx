@@ -90,16 +90,21 @@ function Generating() {
   }, [generate, fetchC, navigate, setCourse]);
 
   return (
-    <div className="relative min-h-screen overflow-hidden flex flex-col items-center justify-center px-6 bg-brand-animated">
-      <div className="absolute inset-0 bg-white/90 backdrop-blur-sm" />
+    <div
+      className="relative min-h-screen overflow-hidden flex flex-col items-center justify-center px-6 bg-brand-animated"
+    >
+      <div className="absolute inset-0" style={{ background: "rgba(247,246,242,0.92)", backdropFilter: "blur(6px)" }} />
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-10 flex justify-center">
           <SynclyLogo size="lg" />
         </div>
 
-        <div className="overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-100">
+        <div
+          className="overflow-hidden rounded-2xl bg-white"
+          style={{ border: "1px solid var(--line)", boxShadow: "0 1px 0 rgba(20,19,26,.04), 0 8px 24px -8px rgba(20,19,26,.10)" }}
+        >
           {/* Progress bar at top */}
-          <div className="h-1 bg-slate-100">
+          <div className="h-1" style={{ background: "var(--bg-deep)" }}>
             <div
               className="h-full transition-all duration-300 ease-out"
               style={{
@@ -110,8 +115,21 @@ function Generating() {
           </div>
 
           <div className="p-7">
-            <h2 className="text-lg font-semibold text-slate-900 mb-1">Building your course</h2>
-            <p className="text-sm text-slate-500 mb-7">Claude is crafting a tailored learning path for this role.</p>
+            <h2
+              className="mb-1"
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 400,
+                fontSize: 22,
+                letterSpacing: "-0.01em",
+                color: "var(--ink)",
+              }}
+            >
+              Building your course
+            </h2>
+            <p className="text-sm mb-7" style={{ color: "var(--ink-3)" }}>
+              Claude is crafting a tailored learning path for this role.
+            </p>
 
             {/* Steps with vertical connector */}
             <ul className="space-y-0">
@@ -124,20 +142,15 @@ function Generating() {
                     {/* Step indicator column */}
                     <div className="flex flex-col items-center">
                       <div
-                        className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-all duration-500 ${
-                          done
-                            ? "text-white"
-                            : active
-                              ? "bg-indigo-100 text-indigo-600"
-                              : "bg-slate-100 text-slate-400"
-                        }`}
+                        className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-all duration-500"
                         style={
                           done
-                            ? { background: "linear-gradient(135deg, #6366f1, #9333ea)" }
-                            : undefined
+                            ? { background: "linear-gradient(135deg, #6366f1, #9333ea)", color: "white" }
+                            : active
+                              ? { background: "#eceafd", color: "#4f46e5" }
+                              : { background: "var(--bg-deep)", color: "var(--ink-4)" }
                         }
                       >
-                        {/* Pulsing ring for active */}
                         {active && (
                           <span className="absolute inset-0 rounded-full bg-indigo-200 animate-ping opacity-75" />
                         )}
@@ -152,10 +165,8 @@ function Generating() {
                       {/* Vertical connector line */}
                       {i < STEPS.length - 1 && (
                         <div
-                          className={`w-px flex-1 my-1 transition-colors duration-500 ${
-                            done ? "bg-indigo-300" : "bg-slate-200"
-                          }`}
-                          style={{ minHeight: "20px" }}
+                          className="w-px flex-1 my-1 transition-colors duration-500"
+                          style={{ minHeight: "20px", background: done ? "#c7c3f7" : "var(--line)" }}
                         />
                       )}
                     </div>
@@ -163,20 +174,16 @@ function Generating() {
                     {/* Label */}
                     <div className="pb-5 pt-1.5">
                       <span
-                        className={`text-sm transition-colors duration-300 ${
-                          done
-                            ? "font-medium text-slate-900"
-                            : active
-                              ? "font-medium text-slate-900"
-                              : pending
-                                ? "text-slate-400"
-                                : "text-slate-400"
-                        }`}
+                        className="text-sm transition-colors duration-300"
+                        style={{
+                          color: done || active ? "var(--ink)" : "var(--ink-4)",
+                          fontWeight: done || active ? 500 : 400,
+                        }}
                       >
                         {label}
                       </span>
                       {done && (
-                        <span className="ml-2 text-xs text-emerald-500 font-medium">✓ Done</span>
+                        <span className="ml-2 text-xs font-medium" style={{ color: "#1f7a52" }}>✓ Done</span>
                       )}
                     </div>
                   </li>
@@ -185,7 +192,10 @@ function Generating() {
             </ul>
 
             {longWait && !error && (
-              <p className="mt-2 text-xs text-slate-500 text-center bg-slate-50 rounded-xl py-3 px-4">
+              <p
+                className="mt-2 text-xs text-center rounded-xl py-3 px-4"
+                style={{ background: "var(--bg)", color: "var(--ink-3)" }}
+              >
                 Almost there — complex roles take a bit longer to craft well.
               </p>
             )}
@@ -205,7 +215,7 @@ function Generating() {
           </div>
         </div>
 
-        <p className="mt-4 text-center text-xs text-slate-400">
+        <p className="mt-4 text-center text-xs" style={{ color: "var(--ink-4)" }}>
           Powered by Claude AI · Results are saved to your session
         </p>
       </div>

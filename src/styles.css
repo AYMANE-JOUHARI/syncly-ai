@@ -2,7 +2,7 @@
 @source "../src";
 @import "tw-animate-css";
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
@@ -79,6 +79,38 @@
 }
 
 html { scroll-behavior: smooth; }
+
+/* ── Syncly editorial design tokens ── */
+:root {
+  --bg: #f7f6f2;
+  --bg-deep: #efede6;
+  --ink: #14131a;
+  --ink-2: #3a3841;
+  --ink-3: #6e6a78;
+  --ink-4: #a6a2ad;
+  --line: #e8e4da;
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-mono-syncly: 'JetBrains Mono', ui-monospace, monospace;
+}
+.font-display { font-family: var(--font-display); }
+.eyebrow-mono {
+  font-family: var(--font-mono-syncly);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+/* Drop cap for prose */
+.prose-drop-cap p:first-child::first-letter {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 4.4em;
+  float: left;
+  line-height: 0.88;
+  margin: 0.05em 0.12em 0 -0.02em;
+  color: #4f46e5;
+}
 
 @media print {
   .no-print { display: none !important; }
