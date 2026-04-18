@@ -17,9 +17,13 @@ function Reader() {
   const fetchC = useServerFn(fetchCourse);
   const navigate = useNavigate();
 
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+
   React.useEffect(() => {
     if (!course || course.id !== courseId) {
-      fetchC({ data: { courseId } }).then(setCourse).catch(() => {});
+      fetchC({ data: { courseId } })
+        .then((c) => { setCourse(c); setLoadError(null); })
+        .catch((e) => setLoadError(e?.message ?? "Failed to load section"));
     }
   }, [course, courseId, fetchC, setCourse]);
 
@@ -29,8 +33,8 @@ function Reader() {
 
   if (!course || !section) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500">
-        Loading section…
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500 px-6 text-center">
+        {loadError ? `Error: ${loadError}` : "Loading section…"}
       </div>
     );
   }
