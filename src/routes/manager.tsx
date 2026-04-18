@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { SynclyLogo } from "@/components/SynclyLogo";
 import { useCourse } from "@/lib/course-context";
-import { startCourseGeneration, getJobStatus, fetchCourse, refineCourse, updateSectionTitle } from "@/server/ai";
+import { generateCourseOutline, generateSectionContent, fetchCourse, refineCourse, updateSectionTitle } from "@/server/ai";
 import { useServerFn } from "@tanstack/react-start";
 import { extractPdfText } from "@/lib/pdf";
 
@@ -44,8 +44,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function Manager() {
   const navigate = useNavigate();
   const { setCourse } = useCourse();
-  const startGenerationFn = useServerFn(startCourseGeneration);
-  const getStatusFn = useServerFn(getJobStatus);
+  const generateOutlineFn = useServerFn(generateCourseOutline);
+  const generateContentFn = useServerFn(generateSectionContent);
   const fetchFn = useServerFn(fetchCourse);
   const refineFn = useServerFn(refineCourse);
   const updateTitleFn = useServerFn(updateSectionTitle);
@@ -72,10 +72,11 @@ function Manager() {
   const [genError, setGenError] = React.useState<string | null>(null);
   const [revealedCount, setRevealedCount] = React.useState(0);
   const [builtSections, setBuiltSections] = React.useState<string[]>([]);
+  const [outlineTitles, setOutlineTitles] = React.useState<string[]>([]);
   const intervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const logEndRef = React.useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current); }, []);
+  React.useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current); }, []); // eslint-disable-line
 
   // Editor
   const [courseId, setCourseId] = React.useState<string | null>(null);
@@ -186,6 +187,7 @@ function Manager() {
     setGenError(null);
     setRevealedCount(0);
     setBuiltSections([]);
+    setOutlineTitles([]);
 
     const addLog = (kind: LogEntry["kind"], text: string) =>
       setLog((prev) => [...prev, { kind, text, ts: nowTs() }]);
@@ -195,15 +197,13 @@ function Manager() {
       addLog("ok", srcCount > 0
         ? `Parsing ${totalWords.toLocaleString()} words across ${srcCount} source${srcCount !== 1 ? "s" : ""}...`
         : "Preparing role context...");
-      await sleep(500);
-      addLog("ok", "Mapping knowledge to onboarding structure...");
-      setGenProgress(8);
-      await sleep(400);
 
       const fullRole = company ? `${role} at ${company}` : role;
+      addLog("live", `Generating ${fullRole} course outline...`);
+      setGenProgress(8);
 
-      // ── Start async job (returns immediately, no timeout risk) ──
-      const { jobId } = await startGenerationFn({
+      // ── Phase 1: Generate outline (~15s, well under Cloudflare limit) ──
+      const { courseId: newCourseId, sections: sectionStubs } = await generateOutlineFn({
         data: {
           role: fullRole,
           experienceLevel: level,
@@ -212,81 +212,41 @@ function Manager() {
         },
       });
 
-      addLog("live", `claude-sonnet-4-5 · generating ${fullRole} curriculum...`);
-      setGenProgress(15);
+      // Reveal all section titles at once after outline
+      const titles = sectionStubs.map((s) => s.title);
+      setOutlineTitles(titles);
+      setRevealedCount(sectionStubs.length);
+      setGenProgress(20);
+      addLog("ok", `Outline ready · ${sectionStubs.length} sections · writing content...`);
 
-      // ── Animate skeleton sections while Claude works in background ──
-      const SECTION_LABELS = [
-        "Foundations & Context",
-        "Core Concepts",
-        "Practical Application",
-        "Tools & Workflow",
-        "Advanced Topics",
-        "Final Assessment",
-      ];
-      let tick = 0;
-      intervalRef.current = setInterval(() => {
-        tick++;
-        const idx = tick - 1;
-        if (idx < SECTION_LABELS.length) {
-          setRevealedCount(tick);
-          addLog("ok", `Structuring section ${tick} · ${SECTION_LABELS[idx]}...`);
-        }
-        if (tick >= SECTION_LABELS.length) {
-          clearInterval(intervalRef.current!);
-          intervalRef.current = null;
-        }
-      }, 3200);
+      // ── Phase 2: Generate content for each section (~10s each) ──
+      const completedTitles: string[] = [];
+      for (let i = 0; i < sectionStubs.length; i++) {
+        const stub = sectionStubs[i];
+        const progress = 20 + ((i + 1) / sectionStubs.length) * 72;
+        addLog("live", `Writing section ${i + 1} · ${stub.title}...`);
 
-      // ── Poll for job completion (every 2.5 s, max 4 min) ──
-      const MAX_MS = 4 * 60 * 1000;
-      const startedAt = Date.now();
+        await generateContentFn({ data: { courseId: newCourseId, sectionId: stub.id } });
 
-      const pollUntilDone = async (): Promise<string> => {
-        if (Date.now() - startedAt > MAX_MS)
-          throw new Error("Generation timed out after 4 minutes. Please try again.");
-
-        await sleep(2500);
-        const { status, courseId: completedId, error: jobError } = await getStatusFn({ data: { jobId } });
-
-        if (status === "complete" && completedId) return completedId;
-        if (status === "error") throw new Error(jobError ?? "Generation failed on the server.");
-
-        // Nudge progress bar forward while waiting
-        const elapsed = Date.now() - startedAt;
-        setGenProgress(Math.min(15 + (elapsed / MAX_MS) * 70, 82));
-
-        return pollUntilDone();
-      };
-
-      const completedCourseId = await pollUntilDone();
-
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-
-      setGenProgress(88);
-      addLog("ok", "Course saved · loading editor...");
-      await sleep(300);
-
-      const generated = await fetchFn({ data: { courseId: completedCourseId } });
-      setEditorCourse(generated);
-      setCourseId(completedCourseId);
-      setCourse(generated);
-
-      // Reveal real section titles one by one
-      setRevealedCount(generated.sections.length);
-      const titles: string[] = [];
-      for (let i = 0; i < generated.sections.length; i++) {
-        titles.push(generated.sections[i].title);
-        setBuiltSections([...titles]);
-        addLog("done", `Section ${i + 1} · ${generated.sections[i].title}`);
-        await sleep(150);
+        completedTitles.push(stub.title);
+        setBuiltSections([...completedTitles]);
+        setGenProgress(progress);
+        addLog("done", `Section ${i + 1} · ${stub.title}`);
       }
 
+      setGenProgress(96);
+      addLog("ok", "All sections complete · loading editor...");
+      await sleep(300);
+
+      const generated = await fetchFn({ data: { courseId: newCourseId } });
+      setEditorCourse(generated);
+      setCourseId(newCourseId);
+      setCourse(generated);
+
       setGenProgress(100);
-      await sleep(500);
+      await sleep(400);
       setPhase("editor");
     } catch (e: any) {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
       setGenError(e?.message ?? "Generation failed.");
       setPhase("intake");
     }
@@ -638,10 +598,10 @@ function Manager() {
           <div className="flex-1 overflow-y-auto px-8 py-8">
             <p className="eyebrow-mono mb-5">Course outline</p>
             <div className="space-y-3 max-w-xl">
-              {Array.from({ length: 6 }).map((_, i) => {
+              {Array.from({ length: Math.max(revealedCount, 5) }).map((_, i) => {
                 const isRevealed = i < revealedCount;
-                const realTitle = builtSections[i];
-                const isBuilding = isRevealed && !realTitle;
+                const outlineTitle = outlineTitles[i];
+                const contentReady = !!builtSections[i];
 
                 if (!isRevealed) {
                   return (
@@ -658,35 +618,32 @@ function Manager() {
                     key={i}
                     className="rounded-xl px-5 py-4 transition-all duration-500"
                     style={{
-                      background: realTitle ? "white" : "white",
-                      border: `1px solid ${realTitle ? "#c7c3f7" : "var(--line)"}`,
+                      background: "white",
+                      border: `1px solid ${contentReady ? "#c7c3f7" : outlineTitle ? "#e8e4da" : "var(--line)"}`,
                       animation: "fadeSlideIn 0.4s ease both",
                     }}
                   >
                     <div className="flex items-center gap-3">
                       <span
                         className="shrink-0 text-xs font-bold tabular-nums"
-                        style={{ fontFamily: "var(--font-mono-syncly)", color: realTitle ? "#4f46e5" : "var(--ink-4)" }}
+                        style={{ fontFamily: "var(--font-mono-syncly)", color: contentReady ? "#4f46e5" : "var(--ink-4)" }}
                       >
                         {String(i + 1).padStart(2, "0")}
                       </span>
 
-                      {realTitle ? (
-                        <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
-                          {realTitle}
+                      {outlineTitle ? (
+                        <p className="text-sm font-semibold flex-1" style={{ color: "var(--ink)" }}>
+                          {outlineTitle}
                         </p>
-                      ) : isBuilding ? (
-                        <div className="flex items-center gap-2 flex-1">
-                          <div className="h-3 rounded-full flex-1 animate-pulse" style={{ background: "var(--bg-deep)", maxWidth: 220 }} />
-                          <span className="text-xs animate-pulse" style={{ color: "#4f46e5" }}>building…</span>
-                        </div>
                       ) : (
-                        <div className="h-3 rounded-full flex-1 animate-pulse" style={{ background: "var(--bg-deep)" }} />
+                        <div className="h-3 rounded-full flex-1 animate-pulse" style={{ background: "var(--bg-deep)", maxWidth: 220 }} />
                       )}
 
-                      {realTitle && (
+                      {contentReady ? (
                         <span className="shrink-0 text-xs font-medium" style={{ color: "#1f7a52" }}>✓ ready</span>
-                      )}
+                      ) : outlineTitle ? (
+                        <span className="shrink-0 text-xs animate-pulse" style={{ color: "#4f46e5" }}>writing…</span>
+                      ) : null}
                     </div>
                   </div>
                 );

@@ -95,66 +95,82 @@ const buildCourseTool: Anthropic.Tool = {
   },
 };
 
-// ── In-memory job store (no DB table needed) ─────────────────────────
-type JobStatus = "pending" | "running" | "complete" | "error";
-type Job = { status: JobStatus; courseId?: string; error?: string };
-const jobStore = new Map<string, Job>();
+// ── Outline-only tool (titles + summaries + quizzes, no long content) ──
+const buildOutlineTool: Anthropic.Tool = {
+  name: "build_outline",
+  description: "Return a course outline with titles, summaries, and quizzes only (no section content yet)",
+  input_schema: {
+    type: "object",
+    properties: {
+      course_title: { type: "string", description: "Specific, professional course title" },
+      learner_goal: { type: "string", description: "Concrete, measurable outcome statement" },
+      sections: {
+        type: "array",
+        minItems: 5,
+        maxItems: 6,
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            summary: { type: "string", description: "1-2 sentence section summary" },
+            quiz: {
+              type: "array",
+              minItems: 4,
+              maxItems: 4,
+              items: {
+                type: "object",
+                properties: {
+                  question: { type: "string" },
+                  options: {
+                    type: "array",
+                    items: { type: "string" },
+                    minItems: 4,
+                    maxItems: 4,
+                    description: "Four option strings (do not prefix with A/B/C/D)",
+                  },
+                  answer: { type: "string", enum: ["A", "B", "C", "D"] },
+                },
+                required: ["question", "options", "answer"],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ["title", "summary", "quiz"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["course_title", "learner_goal", "sections"],
+    additionalProperties: false,
+  },
+};
+
+type OutlineShape = {
+  course_title: string;
+  learner_goal: string;
+  sections: Array<{
+    title: string;
+    summary: string;
+    quiz: Array<{ question: string; options: string[]; answer: string }>;
+  }>;
+};
+
+const OUTLINE_SYSTEM = `You are a world-class onboarding course designer used by Fortune 500 companies.
+
+Rules:
+- Produce exactly 5 or 6 sections in a clear, logical learning progression.
+- Each section title should be specific and descriptive.
+- Each section has a 1-2 sentence summary covering what the learner will understand.
+- Each section has exactly 4 multiple-choice questions that test genuine comprehension.
+- Each question has four options (do not prefix with A/B/C/D) with exactly one correct answer.
+- Tailor depth and vocabulary to the stated experience level.
+- If a source document is provided, ground the structure firmly in it.
+- course_title should be specific and professional.
+- learner_goal should be a concrete, measurable outcome statement.`;
 
 type GenInput = { role: string; experienceLevel: string; goal: string; pdfText?: string };
 
-async function runGenerationInBackground(jobId: string, data: GenInput) {
-  jobStore.set(jobId, { status: "running" });
-  const client = getClient();
-  try {
-    const userPrompt = `Role: ${data.role}
-Experience level: ${data.experienceLevel}
-Learning goal: ${data.goal}${data.pdfText ? `\n\nSource document excerpt:\n"""\n${data.pdfText.slice(0, 30000)}\n"""` : ""}`;
-
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 16000,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      tools: [buildCourseTool],
-      tool_choice: { type: "tool", name: "build_course" },
-      messages: [{ role: "user", content: userPrompt }],
-    });
-
-    if (response.stop_reason === "max_tokens") throw new Error("Course generation was cut short. Please try again with a shorter role description or smaller PDF.");
-    const toolUse = response.content.find((b) => b.type === "tool_use");
-    if (!toolUse || toolUse.type !== "tool_use") throw new Error("Malformed AI response");
-    const parsed = toolUse.input as CourseShape;
-    if (!Array.isArray(parsed.sections) || parsed.sections.length === 0) throw new Error("AI returned an empty course. Please try again.");
-
-    const { data: course, error: cErr } = await supabaseAdmin.from("courses").insert({
-      role: data.role, experience_level: data.experienceLevel, goal: data.goal,
-      pdf_text: data.pdfText ?? null, course_title: parsed.course_title, learner_goal: parsed.learner_goal,
-    }).select().single();
-    if (cErr || !course) throw new Error(cErr?.message ?? "Failed to save course");
-
-    for (let i = 0; i < parsed.sections.length; i++) {
-      const s = parsed.sections[i];
-      const { data: sec, error: sErr } = await supabaseAdmin.from("sections").insert({
-        course_id: course.id, title: s.title, content: s.content, summary: s.summary, order_index: i,
-      }).select().single();
-      if (sErr || !sec) throw new Error(sErr?.message ?? "Failed to save section");
-      const rows = (s.quiz ?? []).map((q, qi) => ({
-        section_id: sec.id, question: q.question,
-        option_a: q.options[0], option_b: q.options[1], option_c: q.options[2], option_d: q.options[3],
-        correct_answer: q.answer, order_index: qi,
-      }));
-      if (rows.length) {
-        const { error: qErr } = await supabaseAdmin.from("quiz_questions").insert(rows);
-        if (qErr) throw new Error(qErr.message);
-      }
-    }
-
-    jobStore.set(jobId, { status: "complete", courseId: course.id });
-  } catch (e: any) {
-    jobStore.set(jobId, { status: "error", error: e?.message ?? "Unknown error" });
-  }
-}
-
-export const startCourseGeneration = createServerFn({ method: "POST" })
+export const generateCourseOutline = createServerFn({ method: "POST" })
   .inputValidator((d: GenInput) => {
     if (!d || typeof d.role !== "string" || typeof d.experienceLevel !== "string" || typeof d.goal !== "string")
       throw new Error("Invalid input");
@@ -166,26 +182,131 @@ export const startCourseGeneration = createServerFn({ method: "POST" })
     };
   })
   .handler(async ({ data }) => {
-    const jobId = crypto.randomUUID();
-    jobStore.set(jobId, { status: "pending" });
-    setImmediate(() => runGenerationInBackground(jobId, data));
-    return { jobId };
+    const client = getClient();
+
+    const userPrompt = `Role: ${data.role}
+Experience level: ${data.experienceLevel}
+Learning goal: ${data.goal}${data.pdfText ? `\n\nSource document excerpt:\n"""\n${data.pdfText.slice(0, 20000)}\n"""` : ""}`;
+
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 4096,
+      system: [{ type: "text", text: OUTLINE_SYSTEM, cache_control: { type: "ephemeral" } }],
+      tools: [buildOutlineTool],
+      tool_choice: { type: "tool", name: "build_outline" },
+      messages: [{ role: "user", content: userPrompt }],
+    });
+
+    if (response.stop_reason === "max_tokens") throw new Error("Outline generation was cut short. Please try again.");
+    const toolUse = response.content.find((b) => b.type === "tool_use");
+    if (!toolUse || toolUse.type !== "tool_use") throw new Error("Malformed AI response");
+    const parsed = toolUse.input as OutlineShape;
+    if (!Array.isArray(parsed.sections) || parsed.sections.length === 0) throw new Error("AI returned an empty outline. Please try again.");
+
+    const { data: course, error: cErr } = await supabaseAdmin
+      .from("courses")
+      .insert({
+        role: data.role,
+        experience_level: data.experienceLevel,
+        goal: data.goal,
+        pdf_text: data.pdfText ?? null,
+        course_title: parsed.course_title,
+        learner_goal: parsed.learner_goal,
+      })
+      .select()
+      .single();
+    if (cErr || !course) throw new Error(cErr?.message ?? "Failed to save course");
+
+    const sectionResults: { id: string; title: string; summary: string; order_index: number }[] = [];
+    for (let i = 0; i < parsed.sections.length; i++) {
+      const s = parsed.sections[i];
+      const { data: sec, error: sErr } = await supabaseAdmin
+        .from("sections")
+        .insert({ course_id: course.id, title: s.title, content: "", summary: s.summary, order_index: i })
+        .select()
+        .single();
+      if (sErr || !sec) throw new Error(sErr?.message ?? "Failed to save section");
+
+      const rows = (s.quiz ?? []).map((q, qi) => ({
+        section_id: sec.id,
+        question: q.question,
+        option_a: q.options[0], option_b: q.options[1], option_c: q.options[2], option_d: q.options[3],
+        correct_answer: q.answer,
+        order_index: qi,
+      }));
+      if (rows.length) {
+        const { error: qErr } = await supabaseAdmin.from("quiz_questions").insert(rows);
+        if (qErr) throw new Error(qErr.message);
+      }
+
+      sectionResults.push({ id: sec.id, title: s.title, summary: s.summary, order_index: i });
+    }
+
+    return { courseId: course.id as string, sections: sectionResults };
   });
 
-export const getJobStatus = createServerFn({ method: "GET" })
-  .inputValidator((d: { jobId: string }) => {
-    if (!d || typeof d.jobId !== "string") throw new Error("Invalid input");
-    if (!/^[0-9a-f-]{36}$/i.test(d.jobId)) throw new Error("Invalid jobId");
+export const generateSectionContent = createServerFn({ method: "POST" })
+  .inputValidator((d: { courseId: string; sectionId: string }) => {
+    if (!d || typeof d.courseId !== "string" || typeof d.sectionId !== "string")
+      throw new Error("Invalid input");
+    if (!/^[0-9a-f-]{36}$/i.test(d.courseId)) throw new Error("Invalid courseId");
+    if (!/^[0-9a-f-]{36}$/i.test(d.sectionId)) throw new Error("Invalid sectionId");
     return d;
   })
   .handler(async ({ data }) => {
-    const job = jobStore.get(data.jobId);
-    if (!job) throw new Error("Job not found — the server may have restarted. Please try again.");
-    return {
-      status: job.status,
-      courseId: job.courseId ?? null,
-      error: job.error ?? null,
-    };
+    const client = getClient();
+
+    const { data: course } = await supabaseAdmin
+      .from("courses")
+      .select("role, experience_level, goal, pdf_text, course_title, learner_goal")
+      .eq("id", data.courseId)
+      .single();
+    if (!course) throw new Error("Course not found");
+
+    const { data: section } = await supabaseAdmin
+      .from("sections")
+      .select("title, summary, order_index")
+      .eq("id", data.sectionId)
+      .single();
+    if (!section) throw new Error("Section not found");
+
+    const pdfExcerpt = course.pdf_text
+      ? `\n\nSource document excerpt:\n"""\n${(course.pdf_text as string).slice(0, 12000)}\n"""`
+      : "";
+
+    const prompt = `You are writing the full educational content for one section of an employee onboarding course.
+
+Course: ${course.course_title}
+Learner goal: ${course.learner_goal}
+Role: ${course.role}
+Experience level: ${course.experience_level}${pdfExcerpt}
+
+Section title: "${section.title}"
+Section summary: ${section.summary}
+
+Write 400-600 words of practical, role-specific content using rich markdown:
+- ## for major headings within this section
+- ### for sub-headings where needed
+- **bold** for key terms and concepts
+- *italic* for emphasis
+- - bullet lists for enumerable items
+- > blockquotes for important insights or key takeaways
+
+Make it actionable and specific to the role. No filler or generic advice.`;
+
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 2048,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    if (response.stop_reason === "max_tokens") throw new Error("Content generation was cut short for this section.");
+    const content = response.content[0]?.type === "text" ? response.content[0].text : "";
+
+    const { error } = await supabaseAdmin.from("sections").update({ content }).eq("id", data.sectionId);
+    if (error) throw new Error(error.message);
+
+    return { content };
   });
 
 export const generateCourse = createServerFn({ method: "POST" })
