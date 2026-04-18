@@ -10,8 +10,20 @@ function key() {
   return k;
 }
 
+const clip = (s: string, n: number) => s.replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, n);
+
 export const generateCourse = createServerFn({ method: "POST" })
-  .inputValidator((d: { role: string; experienceLevel: string; goal: string; pdfText?: string }) => d)
+  .inputValidator((d: { role: string; experienceLevel: string; goal: string; pdfText?: string }) => {
+    if (!d || typeof d.role !== "string" || typeof d.experienceLevel !== "string" || typeof d.goal !== "string") {
+      throw new Error("Invalid input");
+    }
+    return {
+      role: clip(d.role, 500),
+      experienceLevel: clip(d.experienceLevel, 100),
+      goal: clip(d.goal, 300),
+      pdfText: typeof d.pdfText === "string" ? d.pdfText.slice(0, 30000) : undefined,
+    };
+  })
   .handler(async ({ data }) => {
     const systemPrompt = `You are an expert onboarding course designer. Build a focused, practical learning course tailored to the role.
 - Produce 4 to 6 sections in a logical learning order.
