@@ -54,9 +54,8 @@ function Quiz() {
     let correct = 0;
     for (const ques of questions) {
       const sel = answers[ques.id];
-      const ok = sel === ques.correct_answer;
-      if (ok) correct++;
-      try { await record({ data: { sectionId, selected: sel ?? "", correct: ok } }); } catch {}
+      if (sel === ques.correct_answer) correct++;
+      try { await record({ data: { questionId: ques.id, selected: sel ?? "" } }); } catch {}
     }
     const score = correct / questions.length;
     setProgress(sectionId, { completed: true, quizScore: score, answers });
