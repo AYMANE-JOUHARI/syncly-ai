@@ -185,6 +185,7 @@ export const fetchCourse = createServerFn({ method: "GET" })
       id: course.id,
       course_title: course.course_title ?? "Course",
       learner_goal: course.learner_goal ?? course.goal ?? "",
+      // pdf_text intentionally omitted to avoid leaking uploaded document content to clients
       sections: (sections ?? []).map((s) => ({
         id: s.id,
         title: s.title,
