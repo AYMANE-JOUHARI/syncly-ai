@@ -46,13 +46,14 @@ function Intake() {
     }
     setParsing(true);
     let pdfText = "";
-    try {
-      if (file) pdfText = await extractPdfText(file);
-    } catch (err: any) {
-      console.error(err);
-      setError("Could not read the PDF. Try a different file.");
-      setParsing(false);
-      return;
+    if (file) {
+      try {
+        pdfText = await extractPdfText(file);
+      } catch (err: any) {
+        console.error("PDF extract failed:", err);
+        // Non-fatal: continue without PDF context rather than blocking the user
+        pdfText = "";
+      }
     }
     sessionStorage.setItem(
       "syncly:intake",
