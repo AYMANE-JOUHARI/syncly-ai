@@ -10,8 +10,20 @@ function key() {
   return k;
 }
 
+const clip = (s: string, n: number) => s.replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, n);
+
 export const generateCourse = createServerFn({ method: "POST" })
-  .inputValidator((d: { role: string; experienceLevel: string; goal: string; pdfText?: string }) => d)
+  .inputValidator((d: { role: string; experienceLevel: string; goal: string; pdfText?: string }) => {
+    if (!d || typeof d.role !== "string" || typeof d.experienceLevel !== "string" || typeof d.goal !== "string") {
+      throw new Error("Invalid input");
+    }
+    return {
+      role: clip(d.role, 500),
+      experienceLevel: clip(d.experienceLevel, 100),
+      goal: clip(d.goal, 300),
+      pdfText: typeof d.pdfText === "string" ? d.pdfText.slice(0, 30000) : undefined,
+    };
+  })
   .handler(async ({ data }) => {
     const systemPrompt = `You are an expert onboarding course designer. Build a focused, practical learning course tailored to the role.
 - Produce 4 to 6 sections in a logical learning order.
@@ -173,6 +185,7 @@ export const fetchCourse = createServerFn({ method: "GET" })
       id: course.id,
       course_title: course.course_title ?? "Course",
       learner_goal: course.learner_goal ?? course.goal ?? "",
+      // pdf_text intentionally omitted to avoid leaking uploaded document content to clients
       sections: (sections ?? []).map((s) => ({
         id: s.id,
         title: s.title,
@@ -197,7 +210,15 @@ export const fetchCourse = createServerFn({ method: "GET" })
   });
 
 export const askTutor = createServerFn({ method: "POST" })
-  .inputValidator((d: { courseId: string; message: string; history: { role: string; content: string }[] }) => d)
+  .inputValidator((d: { courseId: string; message: string; history: { role: string; content: string }[] }) => {
+    if (!d || typeof d.courseId !== "string" || typeof d.message !== "string") throw new Error("Invalid input");
+    if (!/^[0-9a-f-]{36}$/i.test(d.courseId)) throw new Error("Invalid courseId");
+    const history = Array.isArray(d.history) ? d.history.slice(-10).map((m) => ({
+      role: m?.role === "assistant" ? "assistant" : "user",
+      content: clip(String(m?.content ?? ""), 2000),
+    })) : [];
+    return { courseId: d.courseId, message: clip(d.message, 2000), history };
+  })
   .handler(async ({ data }) => {
     // Load course context
     const { data: course } = await supabaseAdmin
@@ -250,12 +271,24 @@ export const askTutor = createServerFn({ method: "POST" })
   });
 
 export const recordQuizAttempt = createServerFn({ method: "POST" })
-  .inputValidator((d: { sectionId: string; selected: string; correct: boolean }) => d)
+  .inputValidator((d: { questionId: string; selected: string }) => {
+    if (!d || typeof d.questionId !== "string" || typeof d.selected !== "string") throw new Error("Invalid input");
+    if (!/^[0-9a-f-]{36}$/i.test(d.questionId)) throw new Error("Invalid questionId");
+    return { questionId: d.questionId, selected: clip(d.selected, 4) };
+  })
   .handler(async ({ data }) => {
+    // Server-side correctness verification — never trust the client
+    const { data: q } = await supabaseAdmin
+      .from("quiz_questions")
+      .select("section_id, correct_answer")
+      .eq("id", data.questionId)
+      .single();
+    if (!q) throw new Error("Question not found");
+    const isCorrect = data.selected === q.correct_answer;
     await supabaseAdmin.from("quiz_attempts").insert({
-      section_id: data.sectionId,
+      section_id: q.section_id,
       selected_answer: data.selected,
-      is_correct: data.correct,
+      is_correct: isCorrect,
     });
-    return { ok: true };
+    return { ok: true, correct: isCorrect };
   });
