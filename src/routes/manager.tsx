@@ -69,7 +69,12 @@ function Manager() {
   const [log, setLog] = React.useState<LogEntry[]>([]);
   const [genProgress, setGenProgress] = React.useState(0);
   const [genError, setGenError] = React.useState<string | null>(null);
+  const [revealedCount, setRevealedCount] = React.useState(0);
+  const [builtSections, setBuiltSections] = React.useState<string[]>([]);
+  const intervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const logEndRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current); }, []);
 
   // Editor
   const [courseId, setCourseId] = React.useState<string | null>(null);
@@ -178,6 +183,8 @@ function Manager() {
     setLog([]);
     setGenProgress(0);
     setGenError(null);
+    setRevealedCount(0);
+    setBuiltSections([]);
 
     const addLog = (kind: LogEntry["kind"], text: string) =>
       setLog((prev) => [...prev, { kind, text, ts: nowTs() }]);
@@ -187,15 +194,38 @@ function Manager() {
       addLog("ok", srcCount > 0
         ? `Parsing ${totalWords.toLocaleString()} words across ${srcCount} source${srcCount !== 1 ? "s" : ""}...`
         : "Preparing role context...");
-      await sleep(700);
-
+      await sleep(600);
       addLog("ok", "Mapping knowledge to onboarding structure...");
-      setGenProgress(15);
+      setGenProgress(12);
       await sleep(500);
 
       const fullRole = company ? `${role} at ${company}` : role;
-      addLog("live", `claude-sonnet-4-6 · streaming ${fullRole} curriculum...`);
-      setGenProgress(25);
+      addLog("live", `claude-sonnet-4-6 · writing ${fullRole} curriculum...`);
+      setGenProgress(20);
+
+      // Reveal skeleton sections one by one while Claude works
+      const SECTION_LABELS = [
+        "Foundations & Context",
+        "Core Concepts",
+        "Practical Application",
+        "Tools & Workflow",
+        "Advanced Topics",
+        "Final Assessment",
+      ];
+      let tick = 0;
+      intervalRef.current = setInterval(() => {
+        tick++;
+        const idx = tick - 1;
+        if (idx < SECTION_LABELS.length) {
+          setRevealedCount(tick);
+          setGenProgress(20 + tick * 9);
+          addLog("ok", `Building section ${tick} · ${SECTION_LABELS[idx]}...`);
+        }
+        if (tick >= SECTION_LABELS.length) {
+          clearInterval(intervalRef.current!);
+          intervalRef.current = null;
+        }
+      }, 3200);
 
       const { courseId: newId } = await generateFn({
         data: {
@@ -206,23 +236,33 @@ function Manager() {
         },
       });
 
-      setGenProgress(80);
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+
+      setGenProgress(85);
       addLog("ok", "Saving curriculum to database...");
-      await sleep(400);
+      await sleep(350);
 
       const generated = await fetchFn({ data: { courseId: newId } });
       setEditorCourse(generated);
       setCourseId(newId);
       setCourse(generated);
 
-      generated.sections.forEach((s: any, i: number) => {
-        addLog("done", `Section ${i + 1} · ${s.title} — ready`);
-      });
+      // Reveal real section titles one by one
+      setRevealedCount(generated.sections.length);
+      const titles: string[] = [];
+      for (let i = 0; i < generated.sections.length; i++) {
+        const s = generated.sections[i];
+        titles.push(s.title);
+        setBuiltSections([...titles]);
+        addLog("done", `Section ${i + 1} · ${s.title}`);
+        await sleep(180);
+      }
 
       setGenProgress(100);
-      await sleep(700);
+      await sleep(600);
       setPhase("editor");
     } catch (e: any) {
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
       setGenError(e?.message ?? "Generation failed.");
       setPhase("intake");
     }
@@ -534,35 +574,99 @@ function Manager() {
 
       {/* ── GENERATING PHASE ── */}
       {phase === "generating" && (
-        <div className="flex flex-1 items-center justify-center px-6 py-12">
-          <div className="w-full max-w-lg">
-            <p className="eyebrow-mono mb-3 text-center">Generating curriculum</p>
-            <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 400, fontSize: 26, letterSpacing: "-0.015em", color: "var(--ink)", textAlign: "center", marginBottom: 32 }}>
-              {company ? `${role} at ${company}` : role}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left: log panel */}
+          <div className="flex flex-col w-full max-w-sm shrink-0 border-r px-7 py-8 overflow-y-auto" style={{ borderColor: "var(--line)", background: "var(--bg)" }}>
+            <p className="eyebrow-mono mb-1">Building curriculum</p>
+            <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 400, fontSize: 20, letterSpacing: "-0.01em", color: "var(--ink)", margin: "0 0 20px" }}>
+              {company ? `${role} · ${company}` : role}
             </h2>
 
             {/* Progress bar */}
-            <div className="h-1.5 rounded-full overflow-hidden mb-6" style={{ background: "var(--bg-deep)" }}>
+            <div className="h-1 rounded-full overflow-hidden mb-6" style={{ background: "var(--bg-deep)" }}>
               <div className="h-full rounded-full transition-all duration-700" style={{ width: `${genProgress}%`, background: "linear-gradient(90deg, #6366f1, #9333ea)" }} />
             </div>
 
             {/* Log */}
-            <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid var(--line)", background: "white" }}>
-              <div className="px-5 py-4 space-y-2.5 max-h-64 overflow-y-auto">
-                {log.map((entry, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <span style={{ fontFamily: "var(--font-mono-syncly)", fontSize: 10, color: "var(--ink-4)", paddingTop: 2, flexShrink: 0 }}>{entry.ts}</span>
-                    <span
-                      className="text-sm"
-                      style={{ color: entry.kind === "done" ? "#1f7a52" : entry.kind === "live" ? "#4f46e5" : "var(--ink-2)" }}
-                    >
-                      {entry.kind === "done" && "✓ "}{entry.text}
-                      {entry.kind === "live" && <span className="inline-block ml-1 animate-pulse">▋</span>}
-                    </span>
+            <div className="space-y-3 flex-1">
+              {log.map((entry, i) => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <span
+                    className="mt-0.5 shrink-0 text-xs"
+                    style={{ color: entry.kind === "done" ? "#1f7a52" : entry.kind === "live" ? "#4f46e5" : "var(--ink-4)" }}
+                  >
+                    {entry.kind === "done" ? "✓" : entry.kind === "live" ? "›" : "·"}
+                  </span>
+                  <span
+                    className="text-xs leading-relaxed"
+                    style={{ color: entry.kind === "done" ? "#1f7a52" : entry.kind === "live" ? "#4f46e5" : "var(--ink-3)" }}
+                  >
+                    {entry.text}
+                    {entry.kind === "live" && <span className="inline-block ml-1 animate-pulse">▋</span>}
+                  </span>
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
+          </div>
+
+          {/* Right: section cards appearing one by one */}
+          <div className="flex-1 overflow-y-auto px-8 py-8">
+            <p className="eyebrow-mono mb-5">Course outline</p>
+            <div className="space-y-3 max-w-xl">
+              {Array.from({ length: 6 }).map((_, i) => {
+                const isRevealed = i < revealedCount;
+                const realTitle = builtSections[i];
+                const isBuilding = isRevealed && !realTitle;
+
+                if (!isRevealed) {
+                  return (
+                    <div
+                      key={i}
+                      className="rounded-xl"
+                      style={{ height: 64, border: "1px dashed var(--line)", background: "transparent", opacity: 0.3 }}
+                    />
+                  );
+                }
+
+                return (
+                  <div
+                    key={i}
+                    className="rounded-xl px-5 py-4 transition-all duration-500"
+                    style={{
+                      background: realTitle ? "white" : "white",
+                      border: `1px solid ${realTitle ? "#c7c3f7" : "var(--line)"}`,
+                      animation: "fadeSlideIn 0.4s ease both",
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="shrink-0 text-xs font-bold tabular-nums"
+                        style={{ fontFamily: "var(--font-mono-syncly)", color: realTitle ? "#4f46e5" : "var(--ink-4)" }}
+                      >
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+
+                      {realTitle ? (
+                        <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>
+                          {realTitle}
+                        </p>
+                      ) : isBuilding ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <div className="h-3 rounded-full flex-1 animate-pulse" style={{ background: "var(--bg-deep)", maxWidth: 220 }} />
+                          <span className="text-xs animate-pulse" style={{ color: "#4f46e5" }}>building…</span>
+                        </div>
+                      ) : (
+                        <div className="h-3 rounded-full flex-1 animate-pulse" style={{ background: "var(--bg-deep)" }} />
+                      )}
+
+                      {realTitle && (
+                        <span className="shrink-0 text-xs font-medium" style={{ color: "#1f7a52" }}>✓ ready</span>
+                      )}
+                    </div>
                   </div>
-                ))}
-                <div ref={logEndRef} />
-              </div>
+                );
+              })}
             </div>
           </div>
         </div>

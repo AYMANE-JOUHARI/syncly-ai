@@ -331,15 +331,17 @@ export const refineCourse = createServerFn({ method: "POST" })
 
     const { data: sections } = await supabaseAdmin
       .from("sections")
-      .select("id, title, summary, order_index")
+      .select("id, title, summary, content, order_index")
       .eq("course_id", data.courseId)
       .order("order_index");
 
     if (!sections?.length) throw new Error("Course sections not found");
 
     const currentStructure = sections
-      .map((s, i) => `Section ${i + 1}: "${s.title}" — ${s.summary}`)
-      .join("\n");
+      .map((s, i) =>
+        `Section ${i + 1} [id: ${s.id}]\nTitle: "${s.title}"\nSummary: ${s.summary}\nContent (first 300 chars): ${(s.content ?? "").slice(0, 300)}...`
+      )
+      .join("\n\n");
 
     const prompt = `You are refining an onboarding course curriculum based on manager feedback.
 
@@ -351,41 +353,50 @@ ${currentStructure}
 
 Manager instruction: "${data.instruction}"
 
-Apply the instruction. Return ONLY valid JSON (no markdown fences) with this exact shape:
-{
-  "summary": "One sentence describing what changed.",
-  "sections": [
-    { "id": "...", "title": "...", "summary": "..." }
-  ]
-}
+Identify which sections need to change to satisfy this instruction. For EACH changed section, rewrite its title, summary, AND full content (400-600 words of rich markdown using ## headings, **bold** key terms, - bullet lists).
 
-Only include sections that changed. Keep ids exactly as given.`;
+Return ONLY a raw JSON object (no markdown, no explanation) with this exact shape:
+{"summary":"One sentence describing what changed.","sections":[{"id":"<exact-id>","title":"...","summary":"...","content":"...full markdown content..."}]}
+
+Only include sections that actually changed. Keep all ids exactly as given.`;
 
     const response = await client.messages.create({
       model: MODEL,
-      max_tokens: 1024,
+      max_tokens: 8192,
       messages: [{ role: "user", content: prompt }],
     });
 
-    const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-    let parsed: { summary: string; sections: { id: string; title: string; summary: string }[] };
+    const raw = response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
 
+    // Robustly extract JSON — strip fences, then find the first {...} block
+    let jsonStr = raw.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
+    const jsonStart = jsonStr.indexOf("{");
+    const jsonEnd = jsonStr.lastIndexOf("}");
+    if (jsonStart !== -1 && jsonEnd !== -1) jsonStr = jsonStr.slice(jsonStart, jsonEnd + 1);
+
+    let parsed: { summary: string; sections: { id: string; title: string; summary: string; content?: string }[] };
     try {
-      parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, "").trim());
+      parsed = JSON.parse(jsonStr);
     } catch {
-      return { summary: "Applied your feedback to the curriculum.", sections: [] };
+      throw new Error("Claude returned an unexpected response format. Please try again.");
     }
 
-    // Update changed sections in Supabase
-    for (const s of parsed.sections ?? []) {
+    if (!Array.isArray(parsed.sections)) throw new Error("Refinement response was malformed. Please try again.");
+
+    // Write all changed sections back to Supabase (title + summary + content)
+    for (const s of parsed.sections) {
       if (!/^[0-9a-f-]{36}$/i.test(s.id)) continue;
-      await supabaseAdmin
-        .from("sections")
-        .update({ title: s.title, summary: s.summary })
-        .eq("id", s.id);
+      await supabaseAdmin.from("sections").update({
+        title: s.title,
+        summary: s.summary,
+        ...(s.content ? { content: s.content } : {}),
+      }).eq("id", s.id);
     }
 
-    return { summary: parsed.summary ?? "Changes applied.", sections: parsed.sections ?? [] };
+    return {
+      summary: parsed.summary ?? "Changes applied.",
+      sections: parsed.sections,
+    };
   });
 
 export const roleplayChat = createServerFn({ method: "POST" })
